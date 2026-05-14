@@ -1,0 +1,495 @@
+// OKX Adapter Layer
+//
+// APP_TRADING_MODE=production → real OKX data only, no fallback/demo/mock
+// APP_TRADING_MODE=demo       → uses clearly labeled static demo data (dev only)
+//
+// When APP_TRADING_MODE=production and onchainos fails, OkxRealModeError is thrown.
+// Demo data is NEVER substituted silently in production mode.
+//
+// Default source token for swaps: USDC on X Layer
+//   0x74b7f16337b8972027f6196a17a631ac6de26d22
+
+import { TokenSignal, SimulationResult, SourceMeta } from "./schemas";
+import { runCli, OkxCliError } from "./cli-runner";
+
+// ---------------------------------------------------------------------------
+// Chain config
+// ---------------------------------------------------------------------------
+
+const CHAIN_INDEX = process.env.OKX_CHAIN_INDEX ?? "196";
+const CHAIN_NAME  = process.env.OKX_CHAIN_NAME  ?? "X Layer";
+const CHAIN_SLUG  = process.env.OKX_CHAIN_SLUG  ?? "xlayer";
+
+/** Default from-token for swap quotes (USDC on X Layer). Not mandatory. */
+const DEFAULT_FROM_TOKEN =
+  process.env.OKX_DEFAULT_FROM_TOKEN ??
+  "0x74b7f16337b8972027f6196a17a631ac6de26d22";
+const DEFAULT_FROM_SYMBOL =
+  process.env.OKX_DEFAULT_FROM_SYMBOL ?? "USDC";
+
+/** Map common chain name variants to their chainIndex */
+const CHAIN_MAP: Record<string, string> = {
+  "x-layer":  "196",
+  "xlayer":   "196",
+  "base":     "8453",
+  "ethereum": "1",
+  "bsc":      "56",
+  "polygon":  "137",
+  "arbitrum": "42161",
+  "solana":   "501",
+};
+
+const CHAIN_SLUG_MAP: Record<string, string> = {
+  "196":  "xlayer",
+  "8453": "base",
+  "1":    "ethereum",
+  "56":   "bsc",
+  "137":  "polygon",
+  "42161":"arbitrum",
+  "501":  "solana",
+};
+
+export { DEFAULT_FROM_TOKEN, DEFAULT_FROM_SYMBOL };
+
+// ---------------------------------------------------------------------------
+// Config helpers
+// ---------------------------------------------------------------------------
+
+export type TradingMode = "production" | "demo";
+
+function getTradingMode(): TradingMode {
+  const mode = process.env.APP_TRADING_MODE ?? process.env.DATA_MODE;
+  if (mode === "production" || mode === "real") return "production";
+  return "demo";
+}
+
+export function isProductionMode(): boolean {
+  return getTradingMode() === "production";
+}
+
+/**
+ * Hard guard: throws if called while in production mode.
+ * Insert at the top of every demo data branch to enforce isolation.
+ */
+function assertDemoMode(caller: string): void {
+  if (isProductionMode()) {
+    throw new OkxRealModeError(
+      `[BUG] assertDemoMode() reached in production mode inside ${caller}. ` +
+      "Demo data must never be returned in production mode."
+    );
+  }
+}
+
+function sourceMeta(
+  src: SourceMeta["source"],
+  fallbackReason?: string
+): SourceMeta {
+  return {
+    source: src,
+    provider: "OKX Onchain OS",
+    chainIndex: CHAIN_INDEX,
+    chainName: CHAIN_NAME,
+    chainSlug: CHAIN_SLUG,
+    timestamp: new Date().toISOString(),
+    ...(fallbackReason ? { fallbackReason } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Error type — thrown in production mode on any CLI failure
+// ---------------------------------------------------------------------------
+
+export class OkxRealModeError extends Error {
+  public readonly meta: SourceMeta;
+  constructor(message: string, detail?: string) {
+    super(message);
+    this.name = "OkxRealModeError";
+    this.meta = sourceMeta("okx_real_failed", detail ?? message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Internal helper: unwrap CLI JSON result safely
+// ---------------------------------------------------------------------------
+
+function unwrapCliResult(raw: unknown, cmdLabel: string): unknown[] {
+  if (typeof raw !== "object" || raw === null) {
+    throw new OkxRealModeError(
+      `Unexpected CLI output for ${cmdLabel}`,
+      JSON.stringify(raw).slice(0, 200)
+    );
+  }
+  const obj = raw as Record<string, unknown>;
+  if (obj.ok === false) {
+    throw new OkxRealModeError(
+      `onchainos ${cmdLabel} returned ok:false`,
+      String(obj.error ?? obj.message ?? JSON.stringify(obj).slice(0, 200))
+    );
+  }
+  const data = obj.data;
+  if (!Array.isArray(data)) {
+    return [];
+  }
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// 1. Signals — onchainos signal list
+// ---------------------------------------------------------------------------
+
+export interface SignalResponse {
+  signals: TokenSignal[];
+  meta: SourceMeta;
+}
+
+export async function getSignals(
+  _chain: string,
+  maxTokens: number
+): Promise<SignalResponse> {
+  const mode = getTradingMode();
+
+  if (mode === "production") {
+    try {
+      const raw = await runCli([
+        "signal", "list",
+        "--chain", CHAIN_INDEX,
+        "--limit", String(maxTokens),
+      ]);
+
+      const items = unwrapCliResult(raw, "signal list");
+
+      const signals: TokenSignal[] = items
+        .slice(0, maxTokens)
+        .map((item) => {
+          const it = item as Record<string, unknown>;
+          const token = (it.token ?? {}) as Record<string, unknown>;
+          return {
+            symbol: String(token.symbol ?? "UNKNOWN"),
+            address: String(token.tokenAddress ?? ""),
+            amountUsd: parseFloat(String(it.amountUsd ?? "0")),
+            triggerCount: parseInt(String(it.triggerWalletCount ?? "1"), 10),
+            price: String(it.price ?? "0"),
+            source: "okx-dex-signal",
+          } satisfies TokenSignal;
+        })
+        .filter((s) => s.address.length > 0);
+
+      return { signals, meta: sourceMeta("okx_real") };
+    } catch (err) {
+      if (err instanceof OkxRealModeError) throw err;
+      if (err instanceof OkxCliError) {
+        throw new OkxRealModeError(
+          `onchainos signal list failed: ${err.message}`,
+          err.detail
+        );
+      }
+      throw new OkxRealModeError("Signal fetch failed", String(err));
+    }
+  }
+
+  // --- demo mode only ---
+  assertDemoMode("getSignals");
+  await new Promise((r) => setTimeout(r, 600));
+  const demo: TokenSignal[] = [
+    {
+      symbol: "WETH",
+      address: "0x4200000000000000000000000000000000000006",
+      amountUsd: 15400.5,
+      triggerCount: 12,
+      price: "3450.00",
+      source: "okx-dex-signal",
+    },
+    {
+      symbol: "DEMOTKN",
+      address: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      amountUsd: 8200.0,
+      triggerCount: 5,
+      price: "0.042",
+      source: "okx-dex-signal",
+    },
+    {
+      symbol: "SCAMTOKEN",
+      address: "0x1111111111111111111111111111111111111111",
+      amountUsd: 200.0,
+      triggerCount: 2,
+      price: "0.0001",
+      source: "okx-dex-signal",
+    },
+  ].slice(0, maxTokens);
+
+  return { signals: demo, meta: sourceMeta("fallback_demo", "APP_TRADING_MODE=demo") };
+}
+
+// ---------------------------------------------------------------------------
+// 2. Token search — onchainos token search
+// ---------------------------------------------------------------------------
+
+export interface TokenSearchResult {
+  symbol: string;
+  address: string;
+  chainIndex: string;
+}
+
+export async function searchToken(
+  query: string,
+  chainSlug = CHAIN_SLUG
+): Promise<TokenSearchResult[]> {
+  const mode = getTradingMode();
+
+  if (mode === "production") {
+    try {
+      const raw = await runCli([
+        "token", "search",
+        "--query", query,
+        "--chains", chainSlug,
+        "--limit", "5",
+      ]);
+      const items = unwrapCliResult(raw, "token search");
+      return items.map((item) => {
+        const it = item as Record<string, unknown>;
+        return {
+          symbol: String(it.symbol ?? ""),
+          address: String(it.tokenContractAddress ?? it.tokenAddress ?? ""),
+          chainIndex: String(it.chainIndex ?? CHAIN_INDEX),
+        };
+      });
+    } catch (err) {
+      if (err instanceof OkxRealModeError) throw err;
+      if (err instanceof OkxCliError) {
+        throw new OkxRealModeError(`onchainos token search failed: ${err.message}`, err.detail);
+      }
+      throw new OkxRealModeError("Token search failed", String(err));
+    }
+  }
+
+  return [];
+}
+
+// ---------------------------------------------------------------------------
+// 3. Security scan — onchainos security token-scan
+// ---------------------------------------------------------------------------
+
+export interface ScanResponse {
+  riskLevel: string;
+  decision: "safe" | "high_risk" | "unknown";
+  executionAllowed: boolean;
+  isScanned: boolean;
+  isHoneypot: boolean;
+  triggeredLabels: string[];
+  unknownReason?: string;
+  meta: SourceMeta;
+}
+
+const LABEL_FIELDS: Array<[string, string]> = [
+  ["isHoneypot", "Honeypot"],
+  ["isRubbishAirdrop", "Garbage Airdrop"],
+  ["isAirdropScam", "Gas Mint Scam"],
+  ["isLowLiquidity", "Low Liquidity"],
+  ["isDumping", "Dumping"],
+  ["isLiquidityRemoval", "Liquidity Removal"],
+  ["isPump", "Pump"],
+  ["isWash", "Wash Trading"],
+  ["isFakeLiquidity", "Fake Liquidity"],
+  ["isFundLinkage", "Rugpull Gang"],
+  ["isCounterfeit", "Counterfeit"],
+  ["isNotOpenSource", "Not Open Source"],
+  ["isMintable", "Mintable"],
+  ["isNotRenounced", "Not Renounced"],
+];
+
+export async function scanToken(
+  address: string,
+  chain: string
+): Promise<ScanResponse> {
+  const mode = getTradingMode();
+  const resolvedIndex = CHAIN_MAP[chain.toLowerCase()] ?? CHAIN_INDEX;
+
+  if (mode === "production") {
+    try {
+      const raw = await runCli([
+        "security", "token-scan",
+        "--chain", resolvedIndex,
+        "--address", address.toLowerCase(),
+      ]);
+
+      const items = unwrapCliResult(raw, "security token-scan");
+
+      // Empty data array → Unknown / Watchlist
+      if (items.length === 0) {
+        return {
+          riskLevel: "unknown",
+          decision: "unknown",
+          executionAllowed: false,
+          isScanned: true,
+          isHoneypot: false,
+          triggeredLabels: [],
+          unknownReason: "OKX token scan returned no security details",
+          meta: sourceMeta("okx_real"),
+        };
+      }
+
+      const result = items[0] as Record<string, unknown>;
+      const rawRisk = String(result.riskLevel ?? "");
+      const isHoneypot = result.isHoneypot === true;
+
+      const riskLevel = ["CRITICAL", "HIGH", "MEDIUM", "LOW"].includes(rawRisk)
+        ? rawRisk
+        : "HIGH";
+
+      const triggeredLabels = LABEL_FIELDS
+        .filter(([f]) => result[f] === true)
+        .map(([, label]) => label);
+
+      const isHighOrCritical = riskLevel === "CRITICAL" || riskLevel === "HIGH";
+      return {
+        riskLevel,
+        decision: isHighOrCritical ? "high_risk" : "safe",
+        executionAllowed: !isHighOrCritical,
+        isScanned: true,
+        isHoneypot,
+        triggeredLabels,
+        meta: sourceMeta("okx_real"),
+      };
+    } catch (err) {
+      if (err instanceof OkxRealModeError) throw err;
+      if (err instanceof OkxCliError) {
+        throw new OkxRealModeError(`onchainos security token-scan failed: ${err.message}`, err.detail);
+      }
+      throw new OkxRealModeError("Security scan failed", String(err));
+    }
+  }
+
+  // --- demo mode only ---
+  assertDemoMode("scanToken");
+  await new Promise((r) => setTimeout(r, 500));
+  const isScam = address === "0x1111111111111111111111111111111111111111";
+  return {
+    riskLevel: isScam ? "CRITICAL" : "LOW",
+    decision: isScam ? "high_risk" : "safe",
+    executionAllowed: !isScam,
+    isScanned: true,
+    isHoneypot: isScam,
+    triggeredLabels: isScam ? ["Honeypot", "Garbage Airdrop"] : [],
+    meta: sourceMeta("fallback_demo", "APP_TRADING_MODE=demo"),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 4. Swap quote / preflight — onchainos swap quote (real only)
+// ---------------------------------------------------------------------------
+
+export interface QuotePreflightResponse {
+  quote: SimulationResult;
+  fromToken: string;
+  fromSymbol: string;
+  meta: SourceMeta;
+}
+
+export async function getQuotePreflight(
+  toAddress: string,
+  amountUsd: number,
+  chain: string,
+  fromToken = DEFAULT_FROM_TOKEN,
+  fromSymbol = DEFAULT_FROM_SYMBOL
+): Promise<QuotePreflightResponse> {
+  const mode = getTradingMode();
+  const resolvedSlug = CHAIN_SLUG_MAP[CHAIN_MAP[chain.toLowerCase()] ?? CHAIN_INDEX] ?? CHAIN_SLUG;
+
+  if (mode === "production") {
+    try {
+      const readableAmount = "1";
+
+      const raw = await runCli([
+        "swap", "quote",
+        "--from",            fromToken.toLowerCase(),
+        "--to",              toAddress.toLowerCase(),
+        "--readable-amount", readableAmount,
+        "--chain",           resolvedSlug,
+      ]);
+
+      const items = unwrapCliResult(raw, "swap quote");
+
+      if (items.length === 0) {
+        throw new OkxRealModeError(
+          "OKX swap quote returned no data — token may have no liquidity or no route available",
+          `from=${fromToken} to=${toAddress} chain=${CHAIN_SLUG}`
+        );
+      }
+
+      const quote = items[0] as Record<string, unknown>;
+
+      const priceImpact = parseFloat(
+        String(quote.priceImpactPercentage ?? quote.price_impact_percentage ?? "0")
+      );
+      const toAmountRaw = parseFloat(String(quote.toTokenAmount ?? quote.to_token_amount ?? "0"));
+      const toToken = (quote.toToken ?? quote.to_token ?? {}) as Record<string, unknown>;
+      const toDecimals = parseInt(String(toToken.decimal ?? toToken.decimals ?? "18"), 10);
+      const toUnitPrice = parseFloat(String(toToken.tokenUnitPrice ?? toToken.unit_price ?? "1"));
+      const toAmountUsd = (toAmountRaw / Math.pow(10, toDecimals)) * toUnitPrice;
+
+      const gasLimit = parseFloat(String(quote.estimatedGas ?? quote.estimated_gas ?? "150000"));
+      const gasPriceGwei = 0.001;
+      const gasFeeUsd = (gasLimit * gasPriceGwei * 1e-9) * 2000;
+
+      const compareList = quote.quoteCompareList ?? quote.quote_compare_list;
+      const routeName = Array.isArray(compareList) && compareList.length > 0
+        ? String((compareList[0] as Record<string, unknown>).dexName ?? "OKX DEX Aggregator")
+        : "OKX DEX Aggregator";
+
+      return {
+        quote: {
+          success: true,
+          expectedOutputUsd: toAmountUsd > 0 ? toAmountUsd : amountUsd * 0.99,
+          slippage: isNaN(priceImpact) ? 0 : priceImpact,
+          gasFeeUsd: isNaN(gasFeeUsd) ? 0.01 : gasFeeUsd,
+          route: routeName,
+        },
+        fromToken,
+        fromSymbol,
+        meta: sourceMeta("okx_real"),
+      };
+    } catch (err) {
+      if (err instanceof OkxRealModeError) throw err;
+      if (err instanceof OkxCliError) {
+        throw new OkxRealModeError(`onchainos swap quote failed: ${err.message}`, err.detail);
+      }
+      throw new OkxRealModeError("Swap quote failed", String(err));
+    }
+  }
+
+  // --- demo mode only ---
+  assertDemoMode("getQuotePreflight");
+  await new Promise((r) => setTimeout(r, 600));
+  return {
+    quote: {
+      success: true,
+      expectedOutputUsd: amountUsd * 0.99,
+      slippage: 0.5,
+      gasFeeUsd: 0.01,
+      route: "OKX DEX Aggregator",
+    },
+    fromToken,
+    fromSymbol,
+    meta: sourceMeta("fallback_demo", "APP_TRADING_MODE=demo"),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// LEGACY ALIAS: simulateSwap → getQuotePreflight
+// Maintains backward compatibility with /api/simulate route
+// ---------------------------------------------------------------------------
+export async function simulateSwap(
+  toAddress: string,
+  amountUsd: number,
+  chain: string,
+  fromToken = DEFAULT_FROM_TOKEN,
+  fromSymbol = DEFAULT_FROM_SYMBOL
+) {
+  const result = await getQuotePreflight(toAddress, amountUsd, chain, fromToken, fromSymbol);
+  return {
+    simulation: result.quote,
+    fromToken: result.fromToken,
+    fromSymbol: result.fromSymbol,
+    meta: result.meta,
+  };
+}

@@ -1,0 +1,79 @@
+import { NextResponse } from "next/server";
+import { simulateSwap, OkxRealModeError } from "../../../lib/okx";
+import { createApproval } from "../../../lib/approval-store";
+import { checkGuardrails } from "../../../lib/guardrails";
+
+export async function POST(req: Request) {
+  try {
+    const {
+      address,
+      amountUsd,
+      chain,
+      maxBudgetUsd,
+      slippageLimitPercent,
+      isScanned,
+      riskLevel,
+    } = await req.json();
+
+    if (!address || !amountUsd || !chain) {
+      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
+    }
+
+    // Block unscanned tokens
+    if (!isScanned) {
+      return NextResponse.json(
+        { error: "Token has not been scanned. Security scan is required before simulation." },
+        { status: 403 }
+      );
+    }
+
+    // Block high_risk tokens
+    if (riskLevel === "high_risk") {
+      return NextResponse.json(
+        { error: "Token is high risk. Simulation and execution are blocked." },
+        { status: 403 }
+      );
+    }
+
+    // Block unknown risk (empty scan result — watchlist only)
+    if (riskLevel === "unknown") {
+      return NextResponse.json(
+        {
+          error:
+            "Token risk is unknown — OKX security scan returned no data. " +
+            "Token is watchlisted. Simulation and execution are blocked until risk is verified.",
+        },
+        { status: 403 }
+      );
+    }
+
+    const { simulation, fromToken, fromSymbol, meta } = await simulateSwap(
+      address,
+      amountUsd,
+      chain
+    );
+
+    const guardrails = checkGuardrails(
+      amountUsd,
+      maxBudgetUsd,
+      slippageLimitPercent,
+      simulation.slippage
+    );
+    if (!guardrails.valid) {
+      return NextResponse.json({ error: guardrails.reason }, { status: 400 });
+    }
+
+    const approvalId = createApproval(address, chain, maxBudgetUsd, slippageLimitPercent);
+
+    return NextResponse.json({ simulation, fromToken, fromSymbol, approvalId, meta });
+  } catch (err) {
+    if (err instanceof OkxRealModeError) {
+      return NextResponse.json(
+        { error: err.message, meta: err.meta, integration: "okx-dex-swap" },
+        { status: 502 }
+      );
+    }
+    console.error("Simulation error:", err);
+    return NextResponse.json({ error: "Failed to simulate swap" }, { status: 500 });
+  }
+}

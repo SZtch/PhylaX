@@ -128,9 +128,24 @@ export async function runAgentLoop(
     }
 
     // Process tool calls
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    for (const block of response.content) {
-      if (block.type === "tool_use") {
+    const toolUseBlocks = response.content.filter((c: unknown) => (c as Record<string, unknown>).type === "tool_use") as Anthropic.ToolUseBlock[];
+    
+    if (toolUseBlocks.length > 0) {
+      // Bounded Orchestration: Max 5 tool calls total, max 3 scan candidates
+      const blocksToExecute = toolUseBlocks.slice(0, 5);
+      const finalBlocksToExecute: Anthropic.ToolUseBlock[] = [];
+      let scanCount = 0;
+      
+      for (const block of blocksToExecute) {
+        if (block.name === "scan_token") {
+          if (scanCount >= 3) continue; // Skip to enforce cap
+          scanCount++;
+        }
+        finalBlocksToExecute.push(block);
+      }
+
+      // Execute tools concurrently
+      const executionPromises = finalBlocksToExecute.map(async (block) => {
         const toolName = block.name;
         const toolInput = block.input as Record<string, unknown>;
         const toolDef = registry.get(toolName);
@@ -152,6 +167,45 @@ export async function runAgentLoop(
         }
 
         const latencyMs = Date.now() - startTime;
+        return { block, toolName, toolInput, result, isError, latencyMs };
+      });
+
+      const settledResults = await Promise.allSettled(executionPromises);
+
+      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+      const successfulSignals: Record<string, unknown>[] = [];
+      const successfulScans: Record<string, unknown>[] = [];
+      let quoteResultData: Record<string, unknown> | null = null;
+      let quoteBlockInput: Record<string, unknown> | null = null;
+
+      for (let i = 0; i < toolUseBlocks.length; i++) {
+        const originalBlock = toolUseBlocks[i];
+        const executedIndex = finalBlocksToExecute.findIndex(b => b.id === originalBlock.id);
+
+        if (executedIndex === -1) {
+          // Block was skipped due to caps
+          toolResults.push({
+            type: "tool_result",
+            tool_use_id: originalBlock.id,
+            content: JSON.stringify({ error: "Skipped: Exceeded maximum allowed tool executions or scan candidates for this turn." }),
+            is_error: true,
+          });
+          continue;
+        }
+
+        const settled = settledResults[executedIndex];
+        if (settled.status === "rejected") {
+           toolResults.push({
+             type: "tool_result",
+             tool_use_id: originalBlock.id,
+             content: JSON.stringify({ error: String(settled.reason) }),
+             is_error: true,
+           });
+           continue;
+        }
+
+        const { toolName, toolInput, result, isError, latencyMs } = settled.value;
+
         toolCallsLog.push({
           toolName,
           input: toolInput,
@@ -162,76 +216,104 @@ export async function runAgentLoop(
 
         toolResults.push({
           type: "tool_result",
-          tool_use_id: block.id,
+          tool_use_id: originalBlock.id,
           content: typeof result === "string" ? result : JSON.stringify(result),
           is_error: isError,
         });
 
-        // Set action and pipelineData based on successful tool calls
         if (!isError) {
           const res = result as Record<string, unknown>;
           if (toolName === "get_signals") {
-            action = "run_signals";
-            const signals = res.signals as Record<string, unknown>[];
-            const safeCount = signals?.filter(s => s.riskStatus === "safe").length || 0;
-            chatState = safeCount > 0 ? "WAITING_FOR_CONFIRMATION" : "WALLET_CONNECTED";
-            pipelineData = {
-              type: "trade-plan",
-              source: (res.meta as Record<string, unknown>)?.source,
-              signals,
-              chainName: toolInput.chain || chainHint || "x-layer"
-            };
+            const sigs = (res.signals as Record<string, unknown>[]) || [];
+            successfulSignals.push(...sigs.map(s => ({ ...s, chainName: toolInput.chain || chainHint || "x-layer" })));
           } else if (toolName === "scan_token") {
-            action = "run_scan";
-            chatState = res.action === "safe" ? "WAITING_FOR_CONFIRMATION" : "WALLET_CONNECTED";
-            pipelineData = {
-              type: "risk-result",
-              tokenSymbol: "TOKEN",
-              tokenAddress: res.address,
-              riskLevel: res.action === "safe" ? "safe" : (res.action === "high_risk" ? "high_risk" : "unknown"),
-              riskDetails: (res.triggeredLabels as string[])?.join(", "),
-              source: (res.meta as Record<string, unknown>)?.source || "unknown"
-            };
-            // Attempt to resolve symbol if search_token was called previously or we can guess
-            if (toolInput.address) {
-              (pipelineData as Record<string, unknown>).tokenAddress = toolInput.address;
-            }
+            successfulScans.push({
+               ...res,
+               chainName: toolInput.chain || chainHint || "x-layer",
+               symbol: toolInput.symbol || "TOKEN",
+            });
           } else if (toolName === "get_swap_quote") {
-            action = "run_quote";
-            if (res.blocked) {
-              chatState = "FAILED";
-              const scanRes = res.scanResult as Record<string, unknown>;
-              pipelineData = {
-                type: "risk-result",
-                tokenSymbol: res.toAddress || "TOKEN",
-                tokenAddress: res.toAddress,
-                riskLevel: "high_risk",
-                riskDetails: (scanRes?.triggeredLabels as string[])?.join(", "),
-                source: (scanRes?.meta as Record<string, unknown>)?.source
-              };
-            } else {
-              chatState = "WAITING_FOR_CONFIRMATION";
-              const approvalId = createApproval(String(res.toAddress), String(toolInput.chain), Number(res.amount), 3);
-              pipelineData = {
-                type: "quote",
-                quote: res.quote,
-                fromSymbol: res.fromSymbol,
-                toSymbol: res.toAddress,
-                amount: res.amount,
-                scanDecision: res.scanDecision,
-                source: (res.meta as Record<string, unknown>)?.source,
-                approvalId
-              };
-            }
+            quoteResultData = res;
+            quoteBlockInput = toolInput;
           }
         }
       }
-    }
 
-    messages.push({
-      role: "user",
-      content: toolResults,
-    });
+      // Reconcile overall action and pipelineData
+      if (quoteResultData) {
+        action = "run_quote";
+        if (quoteResultData.blocked) {
+          chatState = "FAILED";
+          const scanRes = quoteResultData.scanResult as Record<string, unknown>;
+          pipelineData = {
+            type: "risk-result",
+            tokenSymbol: quoteResultData.toAddress || "TOKEN",
+            tokenAddress: quoteResultData.toAddress,
+            riskLevel: "high_risk",
+            riskDetails: (scanRes?.triggeredLabels as string[])?.join(", "),
+            source: (scanRes?.meta as Record<string, unknown>)?.source
+          };
+        } else {
+          chatState = "WAITING_FOR_CONFIRMATION";
+          const approvalId = createApproval(String(quoteResultData.toAddress), String(quoteBlockInput!.chain), Number(quoteResultData.amount), 3);
+          pipelineData = {
+            type: "quote",
+            quote: quoteResultData.quote,
+            fromSymbol: quoteResultData.fromSymbol,
+            toSymbol: quoteResultData.toAddress,
+            amount: quoteResultData.amount,
+            scanDecision: quoteResultData.scanDecision,
+            source: (quoteResultData.meta as Record<string, unknown>)?.source,
+            approvalId
+          };
+        }
+      } else if (successfulSignals.length > 0) {
+        action = "run_signals";
+        const safeCount = successfulSignals.filter(s => s.riskStatus === "safe").length;
+        chatState = safeCount > 0 ? "WAITING_FOR_CONFIRMATION" : "WALLET_CONNECTED";
+        pipelineData = {
+          type: "trade-plan",
+          signals: successfulSignals,
+          chainName: successfulSignals[0]?.chainName || chainHint || "x-layer"
+        };
+      } else if (successfulScans.length > 0) {
+        if (successfulScans.length === 1) {
+          action = "run_scan";
+          const res = successfulScans[0];
+          chatState = res.action === "safe" ? "WAITING_FOR_CONFIRMATION" : "WALLET_CONNECTED";
+          pipelineData = {
+            type: "risk-result",
+            tokenSymbol: res.symbol || "TOKEN",
+            tokenAddress: res.address,
+            riskLevel: res.action === "safe" ? "safe" : (res.action === "high_risk" ? "high_risk" : "unknown"),
+            riskDetails: (res.triggeredLabels as string[])?.join(", "),
+            source: (res.meta as Record<string, unknown>)?.source || "unknown"
+          };
+        } else {
+          action = "run_signals";
+          const combinedSignals = successfulScans.map(scan => ({
+             address: scan.address,
+             symbol: scan.symbol || "TOKEN",
+             chain: scan.chainName,
+             riskStatus: scan.action === "safe" ? "safe" : (scan.action === "high_risk" ? "high_risk" : "unknown"),
+             amountUsd: 0,
+             triggerCount: 1,
+          }));
+          const safeCount = combinedSignals.filter(s => s.riskStatus === "safe").length;
+          chatState = safeCount > 0 ? "WAITING_FOR_CONFIRMATION" : "WALLET_CONNECTED";
+          pipelineData = {
+            type: "trade-plan",
+            signals: combinedSignals,
+            chainName: combinedSignals[0]?.chain || chainHint || "x-layer"
+          };
+        }
+      }
+
+      messages.push({
+        role: "user",
+        content: toolResults,
+      });
+    }
   }
 
   return {

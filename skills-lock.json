@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "market-structure-analyzer": {
+      "source": "okx/plugin-store",
+      "sourceType": "github",
+      "skillPath": "skills/market-structure-analyzer/SKILL.md",
+      "computedHash": "4e5b2f7c87cda157bc6f9b17a3881ed9ab524d000802ae28395f3335a3f80b6c"
+    },
     "okx-agentic-wallet": {
       "source": "okx/onchainos-skills",
       "sourceType": "github",

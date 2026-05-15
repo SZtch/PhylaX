@@ -181,13 +181,13 @@ console.log("\n── Demo mode still works ──");
 
 console.log("\n── Approval created with quote in chat ──");
 {
-  const chatRoute = fs.readFileSync(
-    path.join(process.cwd(), "app/api/chat/route.ts"),
+  const agentLoopRoute = fs.readFileSync(
+    path.join(process.cwd(), "lib/anthropic.ts"),
     "utf8"
   );
 
-  assert(chatRoute.includes("createApproval"), "Chat route creates approval with quote");
-  assert(chatRoute.includes("approvalId"), "Chat route includes approvalId in response");
+  assert(agentLoopRoute.includes("createApproval"), "Agent loop creates approval with quote");
+  assert(agentLoopRoute.includes("approvalId"), "Agent loop includes approvalId in response");
 }
 
 // ─── QuoteCard Has Confirm Button ────────────────────────────────────────────

@@ -55,6 +55,7 @@ export const messages = pgTable(
     role: text("role").notNull(), // user | assistant | system
     content: text("content").notNull(),
     metadata: jsonb("metadata"),
+    toolCalls: jsonb("tool_calls"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [index("idx_messages_conversation").on(table.conversationId)]

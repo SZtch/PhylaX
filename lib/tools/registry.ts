@@ -1,0 +1,153 @@
+import { getSignals, scanToken, searchToken, getQuotePreflight } from "../okx";
+import { determineRiskAction } from "../risk-scoring";
+
+export interface ToolDefinition<T = unknown> {
+  name: string;
+  description: string;
+  input_schema: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+  validate?: (input: T) => void | string;
+  execute: (input: T, context: ToolContext) => Promise<unknown>;
+}
+
+export interface ToolContext {
+  conversationId: string;
+  walletAddress?: string;
+  // Can add more context like user id if needed
+}
+
+export const registry = new Map<string, ToolDefinition>();
+
+export function registerTool<T>(tool: ToolDefinition<T>) {
+  registry.set(tool.name, tool as ToolDefinition<unknown>);
+}
+
+// 1. get_signals
+registerTool({
+  name: "get_signals",
+  description: "Get trending or high-potential token signals on a specific chain.",
+  input_schema: {
+    type: "object",
+    properties: {
+      chain: { type: "string", description: "Chain to get signals for, e.g. x-layer or base" },
+      max_tokens: { type: "number", description: "Maximum number of tokens to return" },
+    },
+    required: ["chain"],
+  },
+  execute: async (input: { chain: string; max_tokens?: number }) => {
+    const chain = input.chain || "x-layer";
+    const maxTokens = input.max_tokens || 5;
+    const { signals, meta } = await getSignals(chain, maxTokens);
+    return { signals, meta };
+  },
+});
+
+// 2. scan_token
+registerTool({
+  name: "scan_token",
+  description: "Scan a token for security risks (e.g. honeypot, rugged). Must use address.",
+  input_schema: {
+    type: "object",
+    properties: {
+      address: { type: "string", description: "Token contract address (0x...)" },
+      chain: { type: "string", description: "Chain the token is on" },
+    },
+    required: ["address", "chain"],
+  },
+  execute: async (input: { address: string; chain: string }) => {
+    const scanResult = await scanToken(input.address, input.chain);
+    const riskMode = "conservative";
+    const action = determineRiskAction(scanResult.decision, riskMode);
+    return {
+      address: input.address,
+      chain: input.chain,
+      action,
+      riskLevel: scanResult.riskLevel,
+      triggeredLabels: scanResult.triggeredLabels,
+      meta: scanResult.meta,
+    };
+  },
+});
+
+// 3. search_token
+registerTool({
+  name: "search_token",
+  description: "Search for a token by symbol to get its contract address.",
+  input_schema: {
+    type: "object",
+    properties: {
+      symbol: { type: "string", description: "Token symbol (e.g. USDC, OKB)" },
+      chain: { type: "string", description: "Chain to search on" },
+    },
+    required: ["symbol", "chain"],
+  },
+  execute: async (input: { symbol: string; chain: string }) => {
+    const results = await searchToken(input.symbol, input.chain === "x-layer" ? "xlayer" : input.chain);
+    return { results };
+  },
+});
+
+// 4. get_swap_quote
+registerTool({
+  name: "get_swap_quote",
+  description: "Get a swap quote to exchange tokens. Will perform a security scan first and block if high risk.",
+  input_schema: {
+    type: "object",
+    properties: {
+      to_address: { type: "string", description: "Target token contract address (0x...)" },
+      from_symbol: { type: "string", description: "Source token symbol (e.g. USDC)" },
+      amount: { type: "number", description: "Amount of from_symbol to swap" },
+      chain: { type: "string", description: "Chain for the swap" },
+    },
+    required: ["to_address", "amount", "chain"],
+  },
+  execute: async (input: { to_address: string; from_symbol?: string; amount: number; chain: string }) => {
+    const chain = input.chain;
+    const amount = input.amount;
+    const fromSymbol = input.from_symbol || "USDC";
+
+    // Enforce scan before quote
+    let scanDecision: "safe" | "high_risk" | "unknown" | "skipped" = "safe";
+    try {
+      const scanResult = await scanToken(input.to_address, chain);
+      const riskMode = "conservative";
+      scanDecision = determineRiskAction(scanResult.decision, riskMode);
+
+      if (scanDecision === "high_risk") {
+        return {
+          error: "High risk token detected. Quote blocked for security.",
+          blocked: true,
+          scanResult: {
+            riskLevel: scanResult.riskLevel,
+            triggeredLabels: scanResult.triggeredLabels,
+            meta: scanResult.meta
+          }
+        };
+      }
+    } catch {
+      scanDecision = "skipped";
+    }
+
+    const quoteResult = await getQuotePreflight(input.to_address, amount, chain, undefined, fromSymbol.toUpperCase());
+    return {
+      quote: quoteResult.quote,
+      fromSymbol: quoteResult.fromSymbol,
+      toAddress: input.to_address,
+      amount,
+      chain,
+      scanDecision,
+      meta: quoteResult.meta
+    };
+  },
+});
+
+export function getToolsForAnthropic() {
+  return Array.from(registry.values()).map(tool => ({
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.input_schema,
+  }));
+}

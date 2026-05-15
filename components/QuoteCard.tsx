@@ -35,6 +35,7 @@ interface Props {
   getAccessToken?: () => Promise<string | null>;
   getIdentityToken?: () => Promise<string | null>;
   walletAddress?: string | null;
+  onConnectWallet?: () => void;
 }
 
 interface EthereumProvider {
@@ -63,6 +64,7 @@ export function QuoteCard({
   getAccessToken,
   getIdentityToken,
   walletAddress,
+  onConnectWallet,
 }: Props) {
   const slippageOk = quote.slippage < 3;
   const [execState, setExecState] = useState<ExecutionState>("idle");
@@ -213,22 +215,42 @@ export function QuoteCard({
           </div>
         )}
 
-        {/* ── Execution Section ── */}
+      {/* ── Execution Section ── */}
         <AnimatePresence mode="wait">
           {showExecute && approvalId && execState === "idle" && (
             <motion.div key="confirm-button" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="space-y-3 pt-3 border-t border-border/50">
-              <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
-                <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 text-blue-500 mt-0.5" />
-                <span>Your wallet will ask you to review and sign. PhylaX never signs for you.</span>
-              </div>
-              <button
-                id="confirm-execute-btn"
-                onClick={handleExecute}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-brand text-white text-sm font-bold hover:shadow-glow hover:scale-[1.01] transition-all duration-200 flex items-center justify-center gap-2"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                Confirm &amp; Sign Transaction
-              </button>
+              {walletAddress ? (
+                <>
+                  <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
+                    <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 text-blue-500 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-blue-800 mb-0.5">User-Signed Execution</p>
+                      <p>Your wallet will ask you to review and sign. PhylaX never signs for you. Use small test amounts ($1-$5) for initial verification.</p>
+                    </div>
+                  </div>
+                  <button
+                    id="confirm-execute-btn"
+                    onClick={handleExecute}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-brand text-white text-sm font-bold hover:shadow-glow hover:scale-[1.01] transition-all duration-200 flex items-center justify-center gap-2"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Confirm &amp; Sign Transaction
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                    <p>Wallet connection required to sign and submit this transaction.</p>
+                  </div>
+                  <button
+                    onClick={onConnectWallet}
+                    className="w-full py-3 px-4 rounded-xl border border-electric/30 text-electric text-sm font-bold hover:bg-electric/5 transition-all duration-200 flex items-center justify-center gap-2"
+                  >
+                    Connect Wallet to Sign
+                  </button>
+                </>
+              )}
             </motion.div>
           )}
 

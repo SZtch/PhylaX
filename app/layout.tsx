@@ -10,6 +10,14 @@ export const metadata: Metadata = {
   description: "Wallet-gated chat-based natural-language on-chain trading assistant. Risk intelligence before every trade.",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{

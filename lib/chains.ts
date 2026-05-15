@@ -35,7 +35,7 @@ export const SUPPORTED_CHAINS: ChainConfig[] = [
     name: "X Layer",
     chainIndex: "196",
     chainSlug: "xlayer",
-    iconLabel: "X",
+    iconLabel: "/assets/x-layer.jpg",
     defaultFromToken: "0x74b7f16337b8972027f6196a17a631ac6de26d22",
     defaultFromSymbol: "USDC",
     enabled: true,
@@ -45,11 +45,10 @@ export const SUPPORTED_CHAINS: ChainConfig[] = [
     name: "Base",
     chainIndex: "8453",
     chainSlug: "base",
-    iconLabel: "B",
+    iconLabel: "/assets/base.png",
     defaultFromToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     defaultFromSymbol: "USDC",
-    enabled: false,
-    disabledReason: "Coming soon",
+    enabled: true,
   },
 ];
 

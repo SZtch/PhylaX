@@ -17,6 +17,7 @@ import { SettingsPanel } from "../components/SettingsPanel";
 import { ChainSelector } from "../components/ChainSelector";
 import { DEFAULT_CHAIN, type ChainConfig } from "../lib/chains";
 import { usePrivyAuth } from "../components/PrivyProviderWrapper";
+import { CopyAddress } from "../components/CopyAddress";
 
 function createSession(): ChatSession {
   return { id: `session-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, label: "New Chat", createdAt: Date.now() };
@@ -34,8 +35,9 @@ export default function Home() {
   const consoleRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const [sessions, setSessions] = useState<ChatSession[]>(() => [createSession()]);
-  const [activeSessionId, setActiveSessionId] = useState<string>(() => sessions[0]?.id ?? "");
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string>("");
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
 
   // Track view transitions with a key to trigger the CSS animation
   const [viewKey, setViewKey] = useState(0);
@@ -67,36 +69,150 @@ export default function Home() {
     setViewKey(k => k + 1);
   }, []);
 
-  const handleNewChat = useCallback(() => {
-    const s = createSession();
-    setSessions(prev => [s, ...prev]);
-    setActiveSessionId(s.id);
+  // ─── DB Session Management ──────────────────────────────────────────
+
+  const handleNewChat = useCallback(async () => {
     setActiveView("agent");
     setViewKey(k => k + 1);
-  }, []);
+
+    if (privy.authenticated) {
+      try {
+        const token = await privy.getAccessToken();
+        const res = await fetch("/api/chat/sessions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ chain: selectedChain.id }),
+        });
+        const data = await res.json();
+        if (data.session) {
+          const newS = {
+            id: data.session.id,
+            label: data.session.title,
+            createdAt: new Date(data.session.createdAt).getTime(),
+          };
+          setSessions(prev => [newS, ...prev]);
+          setActiveSessionId(newS.id);
+        }
+      } catch (err) {
+        console.error("Failed to create session:", err);
+      }
+    } else {
+      const s = createSession();
+      setSessions(prev => [s, ...prev]);
+      setActiveSessionId(s.id);
+    }
+  }, [privy, selectedChain.id]);
+
+  const fetchSessions = useCallback(async () => {
+    if (!privy.authenticated) return;
+    setIsLoadingSessions(true);
+    try {
+      const token = await privy.getAccessToken();
+      const res = await fetch("/api/chat/sessions", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.sessions) {
+        const formatted = data.sessions.map((s: { id: string; title: string; createdAt: string }) => ({
+          id: s.id,
+          label: s.title,
+          createdAt: new Date(s.createdAt).getTime(),
+        }));
+        setSessions(formatted);
+        if (formatted.length > 0) {
+          setActiveSessionId(formatted[0].id);
+        } else {
+          // Create an initial session if none exist
+          handleNewChat();
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch sessions:", err);
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  }, [privy, handleNewChat]);
+
+  useEffect(() => {
+    if (!privy.authenticated || sessions.length > 0 || isLoadingSessions) return;
+
+    let ignore = false;
+    setTimeout(() => setIsLoadingSessions(true), 0);
+
+    const runFetch = async () => {
+      try {
+        const token = await privy.getAccessToken();
+        const res = await fetch("/api/chat/sessions", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        
+        if (!ignore && data.sessions) {
+          const formatted = data.sessions.map((s: { id: string; title: string; createdAt: string }) => ({
+            id: s.id,
+            label: s.title,
+            createdAt: new Date(s.createdAt).getTime(),
+          }));
+          setSessions(formatted);
+          if (formatted.length > 0) {
+            setActiveSessionId(formatted[0].id);
+          } else {
+            handleNewChat();
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch sessions:", err);
+      } finally {
+        if (!ignore) setIsLoadingSessions(false);
+      }
+    };
+
+    runFetch();
+    return () => { ignore = true; };
+  }, [privy, handleNewChat, sessions.length, isLoadingSessions]);
+
   const handleSelectSession = useCallback((id: string) => {
     setActiveSessionId(id);
     setActiveView("agent");
     setViewKey(k => k + 1);
   }, []);
+
   const handleRenameSession = useCallback((id: string, label: string) => {
     const trimmed = label.trim();
     if (!trimmed) return;
     const short = trimmed.length > 35 ? trimmed.slice(0, 35) + "…" : trimmed;
     setSessions(prev => prev.map(s => s.id === id ? { ...s, label: short } : s));
   }, []);
-  const handleDeleteSession = useCallback((id: string) => {
+
+  const handleDeleteSession = useCallback(async (id: string) => {
+    // Optimistic UI
     setSessions(prev => {
       const next = prev.filter(s => s.id !== id);
       if (next.length === 0) {
-        const fresh = createSession();
-        setActiveSessionId(fresh.id);
-        return [fresh];
+        handleNewChat();
+        return [];
       }
       if (id === activeSessionId) setActiveSessionId(next[0].id);
       return next;
     });
-  }, [activeSessionId]);
+
+    if (privy.authenticated) {
+      try {
+        const token = await privy.getAccessToken();
+        await fetch(`/api/chat/sessions/${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (err) {
+        console.error("Failed to delete session:", err);
+        // Re-fetch on error to sync with DB
+        fetchSessions();
+      }
+    }
+  }, [activeSessionId, fetchSessions, handleNewChat, privy]);
 
   // ─── Landing ──────────────────────────────────────────────────────────
 
@@ -122,7 +238,7 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-white text-foreground font-sans selection:bg-electric/20 overflow-hidden">
+    <div className="fixed inset-0 h-[100dvh] flex flex-col bg-white text-foreground font-sans selection:bg-electric/20 overflow-hidden overscroll-none">
       {/* ═══ NAVBAR ═══ */}
       <header className="flex items-center justify-between px-3 sm:px-4 h-12 border-b border-border/60 bg-white shrink-0 z-50">
         <div className="flex items-center gap-2">
@@ -160,23 +276,23 @@ export default function Home() {
                   <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground chevron-rotate ${userMenuOpen ? "is-open" : ""}`} />
                 </button>
                 {/* Account dropdown — CSS-animated */}
-                <div className={`absolute right-0 top-full mt-2 w-64 rounded-xl bg-white border border-border shadow-soft overflow-hidden z-50 dropdown-panel ${userMenuOpen ? "is-open" : ""}`}>
-                  <div className="px-4 py-3 border-b border-border/50">
-                    {privy.userEmail && <p className="text-xs font-medium text-foreground truncate">{privy.userEmail}</p>}
+                <div className={`absolute right-0 top-full mt-2 w-[240px] rounded-xl bg-white border border-border shadow-soft overflow-hidden z-50 dropdown-panel ${userMenuOpen ? "is-open" : ""}`}>
+                  <div className="px-3 py-2.5 border-b border-border/50">
+                    {privy.userEmail && <p className="text-[12px] font-semibold text-foreground truncate">{privy.userEmail}</p>}
                     {privy.hasWallet && privy.walletAddress ? (
-                      <p className="text-[11px] font-mono text-muted-foreground mt-0.5">
+                      <div className="text-[11px] text-muted-foreground mt-1 flex flex-col gap-1.5">
                         <span className="inline-flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          {privy.walletAddress.slice(0, 6)}…{privy.walletAddress.slice(-4)}
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          <CopyAddress address={privy.walletAddress} />
                         </span>
-                      </p>
+                      </div>
                     ) : (
                       <p className="text-[11px] text-muted-foreground/60 mt-0.5">No wallet connected</p>
                     )}
                   </div>
-                  <div className="py-1">
-                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors duration-120">
-                      <LogOut className="w-4 h-4" />
+                  <div className="py-0.5">
+                    <button onClick={handleLogout} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors duration-120">
+                      <LogOut className="w-3.5 h-3.5" />
                       Sign out
                     </button>
                   </div>
@@ -217,6 +333,7 @@ export default function Home() {
             <div key={`agent-${activeSessionId}`} className="flex flex-col flex-1 min-h-0 view-enter">
               <ChatPanel
                 key={activeSessionId}
+                conversationId={activeSessionId}
                 isAuthenticated={privy.authenticated}
                 hasWallet={privy.hasWallet}
                 onConnectWallet={handleConnectWallet}
@@ -225,6 +342,7 @@ export default function Home() {
                 walletAddress={privy.walletAddress}
                 getAccessToken={privy.getAccessToken}
                 getIdentityToken={privy.getIdentityToken}
+                selectedChain={selectedChain}
               />
             </div>
           )}

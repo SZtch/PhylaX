@@ -108,7 +108,7 @@ function PrivyAuthBridge({ children }: { children: ReactNode }) {
     getAccessToken: privy.getAccessToken ?? getAccessToken ?? nullToken,
     getIdentityToken: _getIdentityToken ?? nullToken,
     privyConfigured: true,
-  }), [privy.ready, privy.authenticated, privy.login, privy.logout, privy.connectWallet, privy.getAccessToken, privy.user, wallets, userEmail]);
+  }), [privy.ready, privy.authenticated, privy.login, privy.logout, privy.connectWallet, privy.getAccessToken, wallets, userEmail]);
 
   return (
     <PrivyAuthContext.Provider value={state}>

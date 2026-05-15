@@ -34,10 +34,30 @@ export const conversations = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     privyUserId: text("privy_user_id").notNull(),
     walletAddress: text("wallet_address").notNull(),
-    startedAt: timestamp("started_at").defaultNow().notNull(),
-    lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
+    title: text("title").notNull().default("New Chat"),
+    selectedChain: text("selected_chain").notNull().default("x-layer"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
   },
   (table) => [index("idx_conversations_user").on(table.privyUserId)]
+);
+
+// ─── Messages ─────────────────────────────────────────────────────────────────
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id),
+    role: text("role").notNull(), // user | assistant | system
+    content: text("content").notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_messages_conversation").on(table.conversationId)]
 );
 
 // ─── Quotes ───────────────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ import { QuoteCard } from "./QuoteCard";
 import type { ChatState } from "../lib/chat-states";
 import { CHAT_STATE_LABELS, isBusyState } from "../lib/chat-states";
 import type { TokenSignal, SimulationResult } from "../lib/schemas";
+import { type ChainConfig } from "../lib/chains";
 
 // ─── Pipeline types ───────────────────────────────────────────────────────────
 
@@ -37,6 +38,7 @@ const SUGGESTIONS = [
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ChatPanelProps {
+  conversationId: string;
   isAuthenticated: boolean;
   hasWallet: boolean;
   onConnectWallet: () => void;
@@ -45,6 +47,7 @@ interface ChatPanelProps {
   walletAddress?: string | null;
   getAccessToken?: () => Promise<string | null>;
   getIdentityToken?: () => Promise<string | null>;
+  selectedChain: ChainConfig;
 }
 
 // ─── Pipeline card wrapper with entrance animation ────────────────────────────
@@ -102,6 +105,7 @@ function EmptyStateWrapper({ children }: { children: React.ReactNode }) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ChatPanel({
+  conversationId,
   isAuthenticated,
   hasWallet,
   onConnectWallet,
@@ -110,6 +114,7 @@ export function ChatPanel({
   walletAddress,
   getAccessToken,
   getIdentityToken,
+  selectedChain,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessageWithCards[]>([]);
   const [input, setInput] = useState("");
@@ -125,18 +130,65 @@ export function ChatPanel({
   const hasRenamed = useRef(false);
   const hasMessages = messages.length > 0;
 
+  const [isFetchingMessages, setIsFetchingMessages] = useState(false);
+
+  // ── Fetch messages ──────────────────────────────────────────────────
   useEffect(() => {
-    if (isAuthenticated && !prevAuthenticated.current) {
-      // Signed in — show welcome
+    if (!isAuthenticated || !conversationId || conversationId.startsWith("session-")) {
+      return;
+    }
+
+    let ignore = false;
+    setTimeout(() => setIsFetchingMessages(true), 0);
+
+    const runFetch = async () => {
+      try {
+        const token = getAccessToken ? await getAccessToken() : null;
+        const res = await fetch(`/api/chat/sessions/${conversationId}/messages`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        
+        if (!ignore && data.messages) {
+          setMessages(data.messages.map((m: { id: string; role: string; content: string; createdAt: string; metadata: Record<string, unknown> | null }) => ({
+            id: m.id,
+            role: m.role as "user" | "assistant" | "system",
+            content: m.content,
+            timestamp: new Date(m.createdAt).getTime(),
+            pipelineData: (m.metadata as unknown as PipelineData) || null,
+          })));
+          
+          if (data.messages.length > 0) {
+            hasRenamed.current = true;
+            setChatState("WALLET_CONNECTED");
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch messages:", err);
+      } finally {
+        if (!ignore) setIsFetchingMessages(false);
+      }
+    };
+
+    runFetch();
+    return () => { ignore = true; };
+  }, [isAuthenticated, conversationId, getAccessToken]);
+
+  useEffect(() => {
+    if (isAuthenticated && !prevAuthenticated.current && messages.length === 0 && !isFetchingMessages) {
+      // Signed in — show welcome only if no messages
       queueMicrotask(() => {
         setChatState("WALLET_CONNECTED");
-        setMessages(prev => [...prev, {
-          id: `system-welcome-${Date.now()}`,
-          role: "assistant",
-          content: "Welcome to PhylaX. I can scan tokens, build swap quotes, and help you find opportunities on X Layer." +
-            (hasWallet ? "\n\nEvery trade requires your explicit wallet signature." : "\n\nConnect a wallet when you're ready to sign transactions."),
-          timestamp: Date.now(),
-        }]);
+        setMessages(prev => {
+          if (prev.length > 0) return prev;
+          return [...prev, {
+            id: `system-welcome-${Date.now()}`,
+            role: "assistant",
+            content: `Welcome to PhylaX. I can scan tokens, build swap quotes, and help you find opportunities on ${selectedChain.name}.` +
+              (hasWallet ? "\n\nEvery trade requires your explicit wallet signature." : "\n\nConnect a wallet when you're ready to sign transactions."),
+            timestamp: Date.now(),
+          }];
+        });
       });
     } else if (!isAuthenticated && prevAuthenticated.current) {
       // Signed out — reset to welcome state
@@ -147,7 +199,7 @@ export function ChatPanel({
       hasRenamed.current = false;
     }
     prevAuthenticated.current = isAuthenticated;
-  }, [isAuthenticated, hasWallet]);
+  }, [isAuthenticated, hasWallet, selectedChain.name, messages.length, isFetchingMessages]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -171,7 +223,7 @@ export function ChatPanel({
       if (getIdentityToken) { try { identityToken = await getIdentityToken(); } catch { /* */ } }
       const headers: Record<string, string> = { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}`, "x-wallet-address": walletAddress ?? "" };
       if (identityToken) headers["x-privy-identity-token"] = identityToken;
-      const res = await fetch("/api/chat", { method: "POST", headers, body: JSON.stringify({ conversationId: `conv-${Date.now()}`, message: text.trim() }) });
+      const res = await fetch("/api/chat", { method: "POST", headers, body: JSON.stringify({ conversationId, message: text.trim(), chain: selectedChain.id }) });
       const data = await res.json();
       if (!res.ok) {
         let errorContent = data.error ?? "Something went wrong. Please try again.";
@@ -187,7 +239,7 @@ export function ChatPanel({
       setMessages(prev => prev.map(m => m.id === loadingMsg.id ? { ...m, isLoading: false, content: "Network error. Check your connection.", role: "system" as const } : m));
       setChatState("FAILED");
     } finally { setIsLoading(false); }
-  }, [canChat, isLoading, walletAddress, getAccessToken, getIdentityToken, onRenameSession]);
+  }, [canChat, isLoading, walletAddress, getAccessToken, getIdentityToken, onRenameSession, selectedChain.id, conversationId]);
 
   const handleSuggestionClick = (prompt: string) => {
     if (!canChat) { onSignIn(); return; }
@@ -202,7 +254,7 @@ export function ChatPanel({
     switch (data.type) {
       case "trade-plan": return <TradePlanCard tokens={data.signals} chainName={data.chainName} />;
       case "risk-result": return <RiskResultCard tokenSymbol={data.tokenSymbol} tokenAddress={data.tokenAddress} riskLevel={data.riskLevel} details={data.riskDetails} />;
-      case "quote": return <QuoteCard quote={data.quote} fromSymbol={data.fromSymbol} toSymbol={data.toSymbol} approvalId={data.approvalId} showExecute={!!data.approvalId} getAccessToken={getAccessToken} getIdentityToken={getIdentityToken} walletAddress={walletAddress} />;
+      case "quote": return <QuoteCard quote={data.quote} fromSymbol={data.fromSymbol} toSymbol={data.toSymbol} approvalId={data.approvalId} showExecute={!!data.approvalId} getAccessToken={getAccessToken} getIdentityToken={getIdentityToken} walletAddress={walletAddress} onConnectWallet={onConnectWallet} />;
       default: return null;
     }
   };
@@ -244,7 +296,7 @@ export function ChatPanel({
               {isBusyState(chatState) && (
                 <p className="text-[11px] text-electric font-medium text-center mt-2 animate-pulse">{CHAT_STATE_LABELS[chatState]}</p>
               )}
-              <p className="text-[10px] text-muted-foreground/30 text-center mt-2">Non-custodial · User-signed execution · X Layer</p>
+              <p className="text-[10px] text-muted-foreground/30 text-center mt-2">Non-custodial · User-signed execution · {selectedChain.name}</p>
             </div>
           </div>
         </>

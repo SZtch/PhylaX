@@ -10,6 +10,7 @@ import {
   X,
   Coins,
 } from "lucide-react";
+import { CopyAddress } from "./CopyAddress";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -128,9 +129,11 @@ export function PortfolioPanel({
             {currencySymbol}—
           </h1>
           {hasWallet && walletAddress && (
-            <p className="text-[11px] font-mono text-muted-foreground/40 mt-1">
-              {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)} · {chainName}
-            </p>
+            <div className="text-[11px] text-muted-foreground/40 mt-1 flex items-center justify-center gap-1.5">
+              <CopyAddress address={walletAddress} />
+              <span>·</span>
+              <span>{chainName}</span>
+            </div>
           )}
           {hasWallet && (
             <p className="text-[11px] text-muted-foreground/40 mt-0.5">No assets detected on {chainName}</p>

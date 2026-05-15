@@ -1,6 +1,7 @@
 "use client";
 
 import { User, Wallet, Layers, Activity, LogOut, Shield, Link2 } from "lucide-react";
+import { CopyAddress } from "./CopyAddress";
 
 interface Props {
   isAuthenticated: boolean;
@@ -90,7 +91,7 @@ export function SettingsPanel({
             {hasWallet && walletAddress && (
               <div className="flex items-center justify-between py-2 border-b border-border/30">
                 <span className="text-sm text-muted-foreground">Address</span>
-                <span className="text-sm font-mono text-foreground">{walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}</span>
+                <CopyAddress address={walletAddress} className="text-sm text-foreground" />
               </div>
             )}
             {!hasWallet && (

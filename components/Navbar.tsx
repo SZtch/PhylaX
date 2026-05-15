@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Menu, X, Wallet, ChevronDown } from "lucide-react";
 import { SUPPORTED_CHAINS, type ChainConfig } from "../lib/chains";
 
@@ -23,14 +24,18 @@ interface NavbarProps {
 }
 
 function ChainIcon({ label, size = 20 }: { label: string; size?: number }) {
+  const isUrl = label.startsWith("/");
   return (
-    <span
-      className="inline-flex items-center justify-center rounded-full bg-gradient-brand text-white font-bold shrink-0"
-      style={{ width: size, height: size, fontSize: size * 0.5 }}
-      aria-hidden
+    <div
+      className="inline-flex items-center justify-center rounded-full overflow-hidden bg-muted shrink-0 border border-white/20"
+      style={{ width: size, height: size }}
     >
-      {label}
-    </span>
+      {isUrl ? (
+        <Image src={label} alt="chain" width={size} height={size} className="w-full h-full object-cover" />
+      ) : (
+        <span className="text-white font-bold" style={{ fontSize: size * 0.5 }}>{label}</span>
+      )}
+    </div>
   );
 }
 

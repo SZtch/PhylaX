@@ -144,6 +144,26 @@ registerTool({
   },
 });
 
+// 5. market_structure_check
+import { checkMarketStructure } from "../market-structure";
+
+registerTool({
+  name: "market_structure_check",
+  description: "Check market structure, smart money, and derivatives positioning for a specific token.",
+  input_schema: {
+    type: "object",
+    properties: {
+      symbols: { type: "array", items: { type: "string" }, description: "Array of token symbols to check (e.g. ['BTC', 'ETH'])" },
+      depth: { type: "string", description: "'quick' or 'full'. Defaults to 'quick'." },
+    },
+    required: ["symbols"],
+  },
+  execute: async (input: { symbols: string[]; depth?: string }) => {
+    const results = await checkMarketStructure(input.symbols);
+    return { results, depth: input.depth || "quick" };
+  },
+});
+
 export function getToolsForAnthropic() {
   return Array.from(registry.values()).map(tool => ({
     name: tool.name,

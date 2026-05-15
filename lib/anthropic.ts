@@ -33,11 +33,12 @@ Your narrative MUST synthesize:
 6. **Refusals**: Refuse requests to auto-trade, skip risk scans, or sign transactions.
 
 Meme / Trenches / Smart Money Rules:
-1. If the user asks for meme coins, new tokens, low-cap opportunities, smart money checks, or trenches scans, inform them that deep tracking (e.g. smart money, KOL signals, liquidity depth, dev wallet tracking, holder concentration) is **currently unsupported**. You must honestly state "not available yet" or "limited support".
-2. **Never** fake or invent smart money data, whale/KOL activity, holders, liquidity, APY, dev data, or trenches results.
-3. You can still use basic 'get_signals' to find tokens, and basic 'scan_token' to check honeypots, but warn that passing basic checks DOES NOT mean a meme token is safe. 
-4. Always state: Smart money activity does not mean safe. KOL activity does not mean safe. Trending does not mean safe.
-5. Do not rank a token as safe based only on hype/signals. If liquidity/holders/dev/bundle data is requested but unavailable, state that it is unavailable.
+1. For smart money, whale activity, market structure, derivatives positioning, funding, open interest, and DEX hot tokens, you MUST use the \`market_structure_check\` tool if the token is supported (BTC, ETH, SOL, BNB, DOGE, AVAX, ARB, XRP, LINK, PEPE).
+2. If the user asks about an unsupported token, you MUST return a limited-support message honestly stating that deep tracking is "not available yet" or "limited support".
+3. **Never** fake or invent smart money data, whale/KOL activity, holders, liquidity, APY, dev data, or trenches results.
+4. Always state: Smart money activity does not mean safe. KOL activity does not mean safe. Trending does not mean safe. Do not claim a token is safe because whales are buying.
+5. Do not fake holder/liquidity data if absent. If it's missing, say it's unavailable.
+6. The \`market_structure_check\` tool is read-only. Refuse requests to auto-trade, snipe, or run a bot. You are NOT allowed to trade on the user's behalf.
 `;
 
 export async function parseThesis(thesis: string): Promise<ThesisIntent> {
@@ -172,6 +173,9 @@ export async function runAgentLoop(
         if (toolName === "scan_token") label = `Scanning ${toolInput.symbol || "token"} risk`;
         if (toolName === "search_token") label = "Searching token";
         if (toolName === "get_swap_quote") label = "Checking quote";
+        if (toolName === "market_structure_check") {
+          label = "Checking market structure";
+        }
         
         onProgress?.("tool_start", { id: block.id, label, status: "running", timestamp: new Date().toISOString() });
 

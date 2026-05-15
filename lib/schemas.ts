@@ -1,15 +1,13 @@
 import { z } from "zod";
 
 export interface SourceMeta {
-  /** okx_real = live CLI data, fallback_demo = DATA_MODE=fallback static data,
-   *  okx_real_failed = real mode CLI error, execution_disabled = live execution off by config */
-  source: "okx_real" | "fallback_demo" | "okx_real_failed" | "execution_disabled";
+  /** okx_real = live CLI data, okx_real_failed = real mode CLI error, execution_disabled = live execution off by config */
+  source: "okx_real" | "okx_real_failed" | "execution_disabled";
   provider: string;
   chainIndex: string;
   chainName: string;
   chainSlug: string;
   timestamp: string;
-  fallbackReason?: string;
 }
 
 export const ThesisIntentSchema = z.object({
@@ -45,6 +43,7 @@ export interface Approval {
   id: string;
   tokenAddress: string;
   chain: string;
+  walletAddress?: string;
   budgetUsd: number;
   slippageLimitPercent: number;
   createdAt: number;

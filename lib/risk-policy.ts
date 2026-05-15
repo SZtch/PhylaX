@@ -62,13 +62,6 @@ export function isLiveExecutionEnabled(): boolean {
   return process.env.ENABLE_LIVE_EXECUTION === "true";
 }
 
-/**
- * Whether we're in production mode.
- */
-function isProduction(): boolean {
-  return process.env.NODE_ENV === "production";
-}
-
 // ─── Main Policy Check ───────────────────────────────────────────────────────
 
 /**
@@ -83,14 +76,6 @@ export async function enforceRiskPolicy(
     return {
       allowed: false,
       reason: "Live execution is not enabled. Set ENABLE_LIVE_EXECUTION=true to allow.",
-    };
-  }
-
-  // 2. Production must not silently fall back to demo
-  if (isProduction() && process.env.APP_TRADING_MODE === "demo") {
-    return {
-      allowed: false,
-      reason: "Cannot execute in demo mode during production.",
     };
   }
 

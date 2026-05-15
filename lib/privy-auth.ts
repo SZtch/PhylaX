@@ -36,7 +36,7 @@ export interface WalletSession {
   /** All wallet addresses linked to this Privy user */
   linkedWallets: string[];
   /** How the wallet ownership was verified */
-  authMethod: "identity_token" | "server_lookup" | "dev_passthrough";
+  authMethod: "identity_token" | "server_lookup";
 }
 
 export interface AuthResult {
@@ -193,29 +193,12 @@ export async function verifySession(req: Request): Promise<AuthResult> {
     }
   }
 
-  // Dev fallback
-  const isProduction = process.env.NODE_ENV === "production";
-  if (isProduction) {
-    return {
-      authenticated: false,
-      session: null,
-      error: _privyInitError ?? "Privy backend verification is not configured.",
-      statusCode: 401,
-    };
-  }
-
-  console.warn("[privy-auth] DEV MODE: Session passthrough (no wallet required).");
+  // PrivyClient missing
   return {
-    authenticated: true,
-    session: {
-      userId: `dev-user-${accessToken.slice(0, 8)}`,
-      walletAddress: req.headers.get("x-wallet-address")?.toLowerCase() ?? "dev-no-wallet",
-      sessionId: `dev-session-${Date.now()}`,
-      linkedWallets: [],
-      authMethod: "dev_passthrough",
-    },
-    error: null,
-    statusCode: 200,
+    authenticated: false,
+    session: null,
+    error: _privyInitError ?? "Privy backend verification is not configured.",
+    statusCode: 401,
   };
 }
 
@@ -266,41 +249,15 @@ export async function verifyWalletSession(req: Request): Promise<AuthResult> {
   }
 
   // ── PrivyClient not available ──────────────────────────────────────────
-  const isProduction = process.env.NODE_ENV === "production";
-
-  if (isProduction) {
-    // FAIL CLOSED: Production must never passthrough wallet verification
-    return {
-      authenticated: false,
-      session: null,
-      error:
-        _privyInitError ??
-        "Privy backend verification is not configured. " +
-          "Set NEXT_PUBLIC_PRIVY_APP_ID and PRIVY_APP_SECRET.",
-      statusCode: 401,
-    };
-  }
-
-  // ── Dev mode passthrough (NODE_ENV !== 'production') ────────────────────
-  // WARNING: This is NOT secure. Only used when Privy credentials are not set
-  // during local development. Production ALWAYS fails closed above.
-  console.warn(
-    "[privy-auth] DEV MODE: Using passthrough auth. " +
-      "Wallet ownership is NOT verified. Set Privy credentials for real verification."
-  );
-
-  const devWallet = clientWalletAddress.toLowerCase();
+  // FAIL CLOSED: Must never passthrough wallet verification
   return {
-    authenticated: true,
-    session: {
-      userId: `dev-user-${accessToken.slice(0, 8)}`,
-      walletAddress: devWallet,
-      sessionId: `dev-session-${Date.now()}`,
-      linkedWallets: [devWallet],
-      authMethod: "dev_passthrough",
-    },
-    error: null,
-    statusCode: 200,
+    authenticated: false,
+    session: null,
+    error:
+      _privyInitError ??
+      "Privy backend verification is not configured. " +
+        "Set NEXT_PUBLIC_PRIVY_APP_ID and PRIVY_APP_SECRET.",
+    statusCode: 401,
   };
 }
 

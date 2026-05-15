@@ -9,7 +9,6 @@ export function OkxStatusBadge({ meta }: Props) {
 
   const isReal       = meta.source === "okx_real";
   const isFailed     = meta.source === "okx_real_failed";
-  const isDemo       = meta.source === "fallback_demo";
   const isExecOff    = meta.source === "execution_disabled";
 
   return (
@@ -19,12 +18,6 @@ export function OkxStatusBadge({ meta }: Props) {
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 font-medium">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
           OKX Real Data
-        </span>
-      )}
-      {isDemo && (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-600 font-medium">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-          Demo Data
         </span>
       )}
       {isFailed && (

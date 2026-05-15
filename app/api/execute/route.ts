@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { validateAndConsumeApproval } from "../../../lib/approval-store";
 import { verifyWalletSession } from "../../../lib/privy-auth";
 import { enforceRiskPolicy, isLiveExecutionEnabled } from "../../../lib/risk-policy";
@@ -49,9 +50,10 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { approvalId, amountUsd, quoteSnapshot } = body as {
+    const { approvalId, amountUsd, quoteSnapshot, riskAcknowledged } = body as {
       approvalId?: string;
       amountUsd?: number;
+      riskAcknowledged?: boolean;
       quoteSnapshot?: {
         chainId?: string;
         fromToken?: string;
@@ -76,7 +78,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Approval ID is missing." }, { status: 400 });
     }
     
-    const riskAcknowledged = (body as any).riskAcknowledged;
     if (!riskAcknowledged) {
       return NextResponse.json({ error: "Risk acknowledgement is required for execution." }, { status: 400 });
     }
@@ -93,7 +94,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: reason }, { status: 403 });
     }
 
-    const approvalWallet = (approval as any).walletAddress;
+    const approvalWallet = approval.walletAddress;
     if (approvalWallet && approvalWallet.toLowerCase() !== session.walletAddress.toLowerCase()) {
       await audit({
         event: "execution_blocked",
@@ -127,8 +128,6 @@ export async function POST(req: Request) {
           chainName: process.env.OKX_CHAIN_NAME ?? "X Layer",
           chainSlug: process.env.OKX_CHAIN_SLUG ?? "xlayer",
           timestamp: new Date().toISOString(),
-          fallbackReason:
-            "ENABLE_LIVE_EXECUTION=false — approval recorded, no transaction created",
         },
         message:
           "Live execution is disabled. Quote and risk analysis are real. " +
@@ -240,7 +239,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const executionId = `exec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const executionId = `exec-${randomUUID()}`;
 
     await audit({
       event: "unsigned_tx_created",

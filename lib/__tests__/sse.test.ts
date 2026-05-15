@@ -44,7 +44,7 @@ assert(executeRoute, "/api/execute remains untouched");
 assert(confirmRoute, "/api/confirm remains untouched");
 
 const chatRoute = fs.readFileSync(path.join(process.cwd(), "app/api/chat/route.ts"), "utf8");
-assert(chatRoute.includes("const result = await runAgentLoop(message, chain, history, conversationId);"), "Existing /api/chat behavior is not broken");
+assert(chatRoute.includes("const result = await runAgentLoop(message, chain, history, conversationId"), "Existing /api/chat behavior is not broken");
 
 console.log(`\n${"─".repeat(50)}`);
 console.log(`Results: ${passed} passed, ${failed} failed`);

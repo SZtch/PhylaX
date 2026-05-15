@@ -11,7 +11,6 @@ interface Props {
   /**
    * quoteSource: the meta.source from the quote/preflight API response.
    * - "okx_real"           → show "Real OKX Quote" badge
-   * - "fallback_demo"      → show "Demo Quote" badge (demo mode only)
    * - "okx_real_failed"    → real mode failure (should surface as error)
    * - null                 → loading / unknown
    */
@@ -24,13 +23,6 @@ function QuoteBadge({ source }: { source: SourceMeta["source"] | null }) {
       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 text-xs font-bold tracking-widest uppercase">
         <Zap className="w-3 h-3" />
         Real OKX Quote
-      </span>
-    );
-  }
-  if (source === "fallback_demo") {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-600 text-xs font-bold tracking-widest uppercase">
-        Demo Quote
       </span>
     );
   }

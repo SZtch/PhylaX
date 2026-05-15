@@ -1,6 +1,6 @@
 import { Anthropic } from "@anthropic-ai/sdk";
 import { ThesisIntent, ThesisIntentSchema } from "./schemas";
-import { parseTradeIntent } from "./trade-intent-parser";
+
 import { getToolsForAnthropic, registry } from "./tools/registry";
 import { createApproval } from "./approval-store";
 import { ChatState } from "./chat-states";
@@ -59,7 +59,7 @@ Agent Planning & Decision Rules:
 
 export async function parseThesis(thesis: string): Promise<ThesisIntent> {
   if (!anthropic) {
-    return fallbackThesisParser(thesis);
+    throw new Error("Anthropic API key is not configured. Real AI agent is unavailable.");
   }
 
   try {
@@ -73,8 +73,8 @@ export async function parseThesis(thesis: string): Promise<ThesisIntent> {
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON found");
     return ThesisIntentSchema.parse(JSON.parse(jsonMatch[0]));
-  } catch {
-    return fallbackThesisParser(thesis);
+  } catch (err) {
+    throw new Error(`Failed to parse thesis using Anthropic: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -98,7 +98,7 @@ export async function runAgentLoop(
   walletAddress: string = ""
 ): Promise<AgentRunResult> {
   if (!anthropic) {
-    return fallbackAgentParser(message, chainHint);
+    throw new Error("Anthropic API key is not configured. Real AI agent is unavailable.");
   }
 
   const systemPrompt = `${PHYLAX_PERSONA}\n${chainHint ? `Context: User selected ${chainHint} as default chain.` : ""}`;
@@ -420,30 +420,4 @@ export async function runAgentLoop(
   };
 }
 
-// ─── Fallbacks ───────────────────────────────────────────────────────────────
-
-function fallbackThesisParser(thesis: string): ThesisIntent {
-  const lower = thesis.toLowerCase();
-  return ThesisIntentSchema.parse({
-    timeframe: "1h",
-    maxBudgetUsd: lower.includes("100") ? 100 : 50,
-    maxTokens: 5,
-    riskMode: lower.includes("degen") ? "degen" : "conservative",
-    chain: "x-layer",
-    fallbackChain: "base",
-    requireSimulation: true,
-    requireUserApproval: true,
-    slippageLimitPercent: 2,
-  });
-}
-
-function fallbackAgentParser(message: string, chainHint?: string): AgentRunResult {
-  const intent = parseTradeIntent(message);
-  
-  return {
-    agentMessage: "I am running in deterministic fallback mode due to missing API keys.",
-    action: intent.intentType === "swap" || intent.intentType === "quote" ? "swap_quote" : "ask_clarification",
-    chatState: "WALLET_CONNECTED",
-    toolCallsLog: [{ fallback: true, message: "No API key found, used deterministic parser.", chainHint }]
-  };
-}
+// ─── End ─────────────────────────────────────────────────────────────────

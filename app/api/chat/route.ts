@@ -3,7 +3,6 @@ import { verifySession } from "../../../lib/privy-auth";
 import { runAgentLoop } from "../../../lib/anthropic";
 import { getDb, schema } from "../../../lib/db";
 import { eq, sql, and } from "drizzle-orm";
-import { checkRateLimit } from "../../../lib/rate-limit";
 
 /**
  * POST /api/chat

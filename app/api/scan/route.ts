@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { scanToken, OkxRealModeError } from "../../../lib/okx";
 import { determineRiskAction } from "../../../lib/risk-scoring";
+import { checkRateLimit } from "../../../lib/rate-limit";
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const allowed = await checkRateLimit(`scan:${ip}`, 30, 60);
+  if (!allowed) {
+    return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
+  }
+
   try {
     const { address, riskMode, chain } = await req.json();
 

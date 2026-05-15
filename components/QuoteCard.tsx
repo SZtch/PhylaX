@@ -72,6 +72,7 @@ export function QuoteCard({
   const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
   const [showErrorDetail, setShowErrorDetail] = useState(false);
+  const [riskAcknowledged, setRiskAcknowledged] = useState(false);
 
   const handleExecute = useCallback(async () => {
     if (!approvalId || !walletAddress) return;
@@ -99,6 +100,7 @@ export function QuoteCard({
           approvalId,
           amountUsd: quote.expectedOutputUsd,
           quoteSnapshot: { slippage: quote.slippage, quoteCreatedAt: Date.now() },
+          riskAcknowledged,
         }),
       });
 
@@ -165,7 +167,7 @@ export function QuoteCard({
       setExecState("failed");
       setExecError(`Execution error: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [approvalId, walletAddress, getAccessToken, getIdentityToken, quote]);
+  }, [approvalId, walletAddress, getAccessToken, getIdentityToken, quote, riskAcknowledged]);
 
   return (
     <motion.div
@@ -224,14 +226,32 @@ export function QuoteCard({
                   <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
                     <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 text-blue-500 mt-0.5" />
                     <div>
-                      <p className="font-semibold text-blue-800 mb-0.5">User-Signed Execution</p>
+                      <p className="font-semibold text-blue-800 mb-0.5">User-Signed Execution (Demo Hard Cap Applies)</p>
                       <p>Your wallet will ask you to review and sign. PhylaX never signs for you. Use small test amounts ($1-$5) for initial verification.</p>
                     </div>
                   </div>
+                  
+                  <label className="flex items-start gap-2 text-[11px] text-muted-foreground cursor-pointer bg-muted/20 p-2 rounded-lg border border-border/50 hover:bg-muted/40 transition-colors">
+                    <input 
+                      type="checkbox" 
+                      className="mt-0.5 rounded border-gray-300 text-electric focus:ring-electric"
+                      checked={riskAcknowledged}
+                      onChange={(e) => setRiskAcknowledged(e.target.checked)}
+                    />
+                    <span>
+                      I acknowledge that PhylaX is not financial advice, signals are not proof of safety, on-chain trades can lose funds, and PhylaX cannot recover losses. I accept all risks.
+                    </span>
+                  </label>
+
                   <button
                     id="confirm-execute-btn"
                     onClick={handleExecute}
-                    className="w-full py-3 px-4 rounded-xl bg-gradient-brand text-white text-sm font-bold hover:shadow-glow hover:scale-[1.01] transition-all duration-200 flex items-center justify-center gap-2"
+                    disabled={!riskAcknowledged}
+                    className={`w-full py-3 px-4 rounded-xl text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
+                      riskAcknowledged 
+                        ? "bg-gradient-brand text-white hover:shadow-glow hover:scale-[1.01]" 
+                        : "bg-muted text-muted-foreground cursor-not-allowed"
+                    }`}
                   >
                     <ShieldCheck className="w-4 h-4" />
                     Confirm &amp; Sign Transaction

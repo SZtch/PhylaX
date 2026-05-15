@@ -151,5 +151,30 @@ export async function enforceRiskPolicy(
     };
   }
 
+  // 9. Hard Cap
+  const { getHardCapUsd, checkLiveExecutionReadiness } = await import("./live-execution");
+  const readiness = checkLiveExecutionReadiness();
+  if (!readiness.allowed) {
+    return {
+      allowed: false,
+      reason: readiness.reason,
+    };
+  }
+
+  if (typeof input.amountUsd !== "number" || input.amountUsd <= 0 || isNaN(input.amountUsd)) {
+    return {
+      allowed: false,
+      reason: "Missing or invalid trade amount. Exact USD value required for live execution.",
+    };
+  }
+
+  const hardCap = getHardCapUsd();
+  if (input.amountUsd > hardCap) {
+    return {
+      allowed: false,
+      reason: `Trade amount $${input.amountUsd} exceeds the live demo hard cap of $${hardCap}.`,
+    };
+  }
+
   return { allowed: true, reason: null };
 }

@@ -94,7 +94,8 @@ export async function runAgentLoop(
   chainHint?: string,
   history: { role: "user" | "assistant"; content: string }[] = [],
   conversationId: string = "",
-  onProgress?: AgentProgressCallback
+  onProgress?: AgentProgressCallback,
+  walletAddress: string = ""
 ): Promise<AgentRunResult> {
   if (!anthropic) {
     return fallbackAgentParser(message, chainHint);
@@ -350,7 +351,7 @@ export async function runAgentLoop(
           };
         } else {
           chatState = "WAITING_FOR_CONFIRMATION";
-          const approvalId = createApproval(String(quoteResultData.toAddress), String(quoteBlockInput!.chain), Number(quoteResultData.amount), 3);
+          const approvalId = createApproval(String(quoteResultData.toAddress), String(quoteBlockInput!.chain), Number(quoteResultData.amount), 3, walletAddress);
           pipelineData = {
             type: "quote",
             quote: quoteResultData.quote,

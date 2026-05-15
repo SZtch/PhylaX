@@ -3,6 +3,7 @@ import { verifySession } from "../../../lib/privy-auth";
 import { runAgentLoop } from "../../../lib/anthropic";
 import { getDb, schema } from "../../../lib/db";
 import { eq, sql, and } from "drizzle-orm";
+import { checkRateLimit } from "../../../lib/rate-limit";
 
 /**
  * POST /api/chat
@@ -102,7 +103,7 @@ export async function POST(req: Request) {
   }
 
   // ── 5. Run Agent Loop ───────────────────────────────────────────────────
-  const result = await runAgentLoop(message, chain, history, conversationId);
+  const result = await runAgentLoop(message, chain, history, conversationId, undefined, auth.session!.walletAddress);
 
   // ── 6. Persist Assistant Message ────────────────────────────────────────
   if (db) {

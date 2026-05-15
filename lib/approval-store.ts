@@ -9,10 +9,11 @@ export function createApproval(
   tokenAddress: string,
   chain: string,
   budgetUsd: number,
-  slippageLimitPercent: number
+  slippageLimitPercent: number,
+  walletAddress: string
 ): string {
   const id = randomUUID();
-  const approval: Approval = {
+  const approval: Approval & { walletAddress?: string } = {
     id,
     tokenAddress,
     chain,
@@ -20,7 +21,8 @@ export function createApproval(
     slippageLimitPercent,
     createdAt: Date.now(),
     expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes expiration
-    used: false
+    used: false,
+    walletAddress: walletAddress.toLowerCase()
   };
   
   store.set(id, approval);

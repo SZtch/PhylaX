@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyWalletSession } from "../../../lib/privy-auth";
 import { audit } from "../../../lib/audit";
+import { checkRateLimit } from "../../../lib/rate-limit";
 
 /**
  * POST /api/confirm
@@ -107,6 +108,12 @@ async function checkTxReceipt(
 }
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const allowed = await checkRateLimit(`confirm:${ip}`, 20, 60);
+  if (!allowed) {
+    return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
+  }
+
   // ── 1. Auth verification ────────────────────────────────────────────────
   const auth = await verifyWalletSession(req);
   if (!auth.authenticated) {

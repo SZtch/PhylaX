@@ -4,6 +4,7 @@ import { verifyWalletSession } from "../../../lib/privy-auth";
 import { enforceRiskPolicy, isLiveExecutionEnabled } from "../../../lib/risk-policy";
 import { consumeApproval, isRedisAvailable } from "../../../lib/redis";
 import { audit } from "../../../lib/audit";
+import { checkRateLimit } from "../../../lib/rate-limit";
 
 /**
  * Unsigned transaction shape returned to the client.
@@ -23,6 +24,12 @@ interface UnsignedTx {
 }
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const allowed = await checkRateLimit(`execute:${ip}`, 10, 60);
+  if (!allowed) {
+    return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
+  }
+
   // ── 1. Wallet session & ownership verification ────────────────────────
   const auth = await verifyWalletSession(req);
   if (!auth.authenticated) {
@@ -68,6 +75,11 @@ export async function POST(req: Request) {
     if (!approvalId) {
       return NextResponse.json({ error: "Approval ID is missing." }, { status: 400 });
     }
+    
+    const riskAcknowledged = (body as any).riskAcknowledged;
+    if (!riskAcknowledged) {
+      return NextResponse.json({ error: "Risk acknowledgement is required for execution." }, { status: 400 });
+    }
 
     // ── 3. Validate approval (in-memory store) ───────────────────────────
     const { valid, reason, approval } = validateAndConsumeApproval(approvalId);
@@ -79,6 +91,17 @@ export async function POST(req: Request) {
         metadata: { reason: reason ?? "invalid_approval", approvalId },
       });
       return NextResponse.json({ error: reason }, { status: 403 });
+    }
+
+    const approvalWallet = (approval as any).walletAddress;
+    if (approvalWallet && approvalWallet.toLowerCase() !== session.walletAddress.toLowerCase()) {
+      await audit({
+        event: "execution_blocked",
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: "wallet_mismatch", approvalId },
+      });
+      return NextResponse.json({ error: "Execution wallet does not match the approval wallet." }, { status: 403 });
     }
 
     if (amountUsd && amountUsd > approval.budgetUsd) {

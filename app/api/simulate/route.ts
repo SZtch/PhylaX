@@ -7,12 +7,13 @@ import { verifyWalletSession } from "../../../lib/privy-auth";
 export async function POST(req: Request) {
   // ── Wallet session enforcement ──────────────────────────────────────────
   const auth = await verifyWalletSession(req);
-  if (!auth.authenticated) {
+  if (!auth.authenticated || !auth.session) {
     return NextResponse.json(
       { error: auth.error ?? "Wallet connection required." },
-      { status: auth.statusCode }
+      { status: auth.statusCode || 401 }
     );
   }
+  const session = auth.session;
 
   try {
     const {
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: guardrails.reason }, { status: 400 });
     }
 
-    const approvalId = createApproval(address, chain, maxBudgetUsd, slippageLimitPercent);
+    const approvalId = createApproval(address, chain, maxBudgetUsd, slippageLimitPercent, session.walletAddress);
 
     return NextResponse.json({ simulation, fromToken, fromSymbol, approvalId, meta });
   } catch (err) {

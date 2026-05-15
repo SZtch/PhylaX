@@ -3,8 +3,15 @@ import { verifySession } from "../../../../lib/privy-auth";
 import { runAgentLoop } from "../../../../lib/anthropic";
 import { getDb, schema } from "../../../../lib/db";
 import { eq, sql, and } from "drizzle-orm";
+import { checkRateLimit } from "../../../../lib/rate-limit";
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const allowed = await checkRateLimit(`chat_stream:${ip}`, 30, 60);
+  if (!allowed) {
+    return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
+  }
+
   const auth = await verifySession(req);
   if (!auth.authenticated || !auth.session) {
     return NextResponse.json({ error: auth.error ?? "Please sign in to use PhylaX." }, { status: auth.statusCode || 401 });
@@ -90,7 +97,7 @@ export async function POST(req: Request) {
       try {
         const result = await runAgentLoop(message, chain, history, conversationId, (type, data) => {
           sendEvent(type, data);
-        });
+        }, auth.session!.walletAddress);
 
         if (db) {
           try {

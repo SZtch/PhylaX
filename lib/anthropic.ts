@@ -31,6 +31,13 @@ Your narrative MUST synthesize:
 4. **Quotes & Actions**: If a quote exists, state it is a preview. Explicitly remind the user that execution requires manual wallet signing and you cannot sign for them.
 5. **Blocks**: If a token is high-risk/blocked, explain clearly that the trade will not proceed.
 6. **Refusals**: Refuse requests to auto-trade, skip risk scans, or sign transactions.
+
+Meme / Trenches / Smart Money Rules:
+1. If the user asks for meme coins, new tokens, low-cap opportunities, smart money checks, or trenches scans, inform them that deep tracking (e.g. smart money, KOL signals, liquidity depth, dev wallet tracking, holder concentration) is **currently unsupported**. You must honestly state "not available yet" or "limited support".
+2. **Never** fake or invent smart money data, whale/KOL activity, holders, liquidity, APY, dev data, or trenches results.
+3. You can still use basic 'get_signals' to find tokens, and basic 'scan_token' to check honeypots, but warn that passing basic checks DOES NOT mean a meme token is safe. 
+4. Always state: Smart money activity does not mean safe. KOL activity does not mean safe. Trending does not mean safe.
+5. Do not rank a token as safe based only on hype/signals. If liquidity/holders/dev/bundle data is requested but unavailable, state that it is unavailable.
 `;
 
 export async function parseThesis(thesis: string): Promise<ThesisIntent> {

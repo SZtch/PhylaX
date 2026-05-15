@@ -1,7 +1,25 @@
 import { NextResponse } from "next/server";
 import { getSignals, OkxRealModeError } from "../../../lib/okx";
-import { ThesisIntentSchema } from "../../../lib/schemas";
 import { checkRateLimit } from "../../../lib/rate-limit";
+import { z } from "zod";
+
+const SignalRequestSchema = z.object({
+  chain: z.string().optional(),
+  chainId: z.string().optional(),
+  maxTokens: z.number().optional(),
+});
+
+function normalizeChain(chain?: string, chainId?: string): string {
+  if (chain) {
+    const lower = chain.toLowerCase().replace(/\s+/g, "");
+    if (lower === "xlayer") return "xlayer";
+    return chain;
+  }
+  if (chainId === "196") return "xlayer";
+  if (chainId === "8453") return "base";
+  if (chainId === "1") return "ethereum";
+  return "xlayer";
+}
 
 export async function POST(req: Request) {
   const ip = req.headers.get("x-forwarded-for") || "unknown";
@@ -9,11 +27,24 @@ export async function POST(req: Request) {
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
   }
+  
+  let body;
   try {
-    const body = await req.json();
-    const intent = ThesisIntentSchema.parse(body.intent);
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
-    const { signals, meta } = await getSignals(intent.chain, intent.maxTokens);
+  const parsed = SignalRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid request schema", details: parsed.error.format() }, { status: 400 });
+  }
+
+  const { chain, chainId, maxTokens } = parsed.data;
+  const resolvedChain = normalizeChain(chain, chainId);
+
+  try {
+    const { signals, meta } = await getSignals(resolvedChain, maxTokens ?? 10);
     return NextResponse.json({ signals, meta });
   } catch (err) {
     if (err instanceof OkxRealModeError) {

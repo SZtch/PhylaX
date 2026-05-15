@@ -39,6 +39,22 @@ Meme / Trenches / Smart Money Rules:
 4. Always state: Smart money activity does not mean safe. KOL activity does not mean safe. Trending does not mean safe. Do not claim a token is safe because whales are buying.
 5. Do not fake holder/liquidity data if absent. If it's missing, say it's unavailable.
 6. The \`market_structure_check\` tool is read-only. Refuse requests to auto-trade, snipe, or run a bot. You are NOT allowed to trade on the user's behalf.
+
+Agent Planning & Decision Rules:
+1. When you start reasoning, output an <agent_plan> JSON block BEFORE calling tools or writing final text. The JSON must exactly match this schema:
+{
+  "goal": "string",
+  "plan": ["string"],
+  "decisionMode": "risk_first",
+  "nextAction": "scan" | "quote_preview" | "ask_clarification" | "refuse"
+}
+2. Tool Routing:
+   - For vague trade discovery: get_signals → scan_token top candidates → compare → recommend safest next step.
+   - For direct swap: search_token if needed → scan_token → get_swap_quote only if risk passes.
+   - For market context: market_structure_check if supported.
+3. Candidate Comparison: When multiple token candidates are scanned, produce a clear comparison summary in your text including: token symbol, chain, risk level, blocked (yes/no), reason, quote available (yes/no), and recommendation (avoid / review / quote preview).
+4. Decision Summary: Final answer must include: What I checked, What I found, What I would avoid, What I can preview next, and Whether wallet signing is required.
+5. Next Action Model: Suggest exactly ONE safe next action (e.g. "Preview quote", "Scan another token"). Never suggest auto-buy, copy-trade, sniper, bypass scan, or skip confirmation. Do not auto-trade.
 `;
 
 export async function parseThesis(thesis: string): Promise<ThesisIntent> {
@@ -100,6 +116,7 @@ export async function runAgentLoop(
   let action = "ask_clarification";
   let chatState: ChatState = "WALLET_CONNECTED";
   const toolCallsLog: unknown[] = [];
+  let agentPlan: Record<string, unknown> | undefined;
 
   while (iterations < MAX_ITERATIONS) {
     if (iterations === 0) {
@@ -133,12 +150,52 @@ export async function runAgentLoop(
       content: response.content,
     });
 
+    const textBlocks = response.content.filter((c: unknown) => (c as Record<string, unknown>).type === "text") as unknown as Record<string, unknown>[];
+    for (const textBlock of textBlocks) {
+      const text = String(textBlock.text);
+      const planMatch = text.match(/<agent_plan>([\s\S]*?)<\/agent_plan>/);
+      if (planMatch && !agentPlan) {
+        try {
+          agentPlan = JSON.parse(planMatch[1]);
+          onProgress?.("step", { label: "Planning route", status: "done", timestamp: new Date().toISOString() });
+        } catch {}
+      }
+    }
+
     if (response.stop_reason !== "tool_use") {
-      onProgress?.("step", { label: "Synthesizing result", status: "running", timestamp: new Date().toISOString() });
+      if (agentPlan?.plan && Array.isArray(agentPlan.plan) && agentPlan.plan.some(p => typeof p === 'string' && p.toLowerCase().includes("compare"))) {
+        onProgress?.("step", { label: "Comparing candidates", status: "done", timestamp: new Date().toISOString() });
+      }
+      onProgress?.("step", { label: "Synthesizing decision", status: "running", timestamp: new Date().toISOString() });
       // Loop ends, we have a final text response
       const textContent = response.content.find((c: unknown) => (c as Record<string, unknown>).type === "text") as Record<string, unknown> | undefined;
+      let finalAgentMessage = textContent?.type === "text" ? String(textContent.text) : "I have completed the request.";
+
+      const finalPlanMatch = finalAgentMessage.match(/<agent_plan>([\s\S]*?)<\/agent_plan>/);
+      if (finalPlanMatch) {
+        try {
+          agentPlan = JSON.parse(finalPlanMatch[1]);
+          const planText = agentPlan?.plan ? `**Plan:**\n${(agentPlan.plan as string[]).map((p: string, i: number) => `${i + 1}. ${p}`).join("\n")}\n\n` : "";
+          finalAgentMessage = finalAgentMessage.replace(finalPlanMatch[0], planText).trim();
+        } catch {
+          finalAgentMessage = finalAgentMessage.replace(finalPlanMatch[0], "").trim();
+        }
+      } else if (agentPlan && !finalAgentMessage.includes("**Plan:**")) {
+        const planText = agentPlan.plan ? `**Plan:**\n${(agentPlan.plan as string[]).map((p: string, i: number) => `${i + 1}. ${p}`).join("\n")}\n\n` : "";
+        finalAgentMessage = planText + finalAgentMessage;
+      }
+
+      // If we have a plan, inject it into pipelineData metadata for storage if pipelineData is an object
+      if (agentPlan) {
+        if (pipelineData && typeof pipelineData === "object" && !Array.isArray(pipelineData)) {
+          (pipelineData as Record<string, unknown>).agentPlan = agentPlan;
+        } else if (!pipelineData) {
+          pipelineData = { type: "agent-plan", agentPlan };
+        }
+      }
+
       return {
-        agentMessage: textContent?.type === "text" ? String(textContent.text) : "I have completed the request.",
+        agentMessage: finalAgentMessage,
         action,
         chatState,
         pipelineData,
@@ -169,10 +226,10 @@ export async function runAgentLoop(
         const toolInput = block.input as Record<string, unknown>;
         
         let label = "Using tool";
-        if (toolName === "get_signals") label = "Searching tokens";
-        if (toolName === "scan_token") label = `Scanning ${toolInput.symbol || "token"} risk`;
-        if (toolName === "search_token") label = "Searching token";
-        if (toolName === "get_swap_quote") label = "Checking quote";
+        if (toolName === "get_signals") label = "Searching candidates";
+        if (toolName === "scan_token") label = "Scanning risks";
+        if (toolName === "search_token") label = "Searching candidates";
+        if (toolName === "get_swap_quote") label = "Preparing quote preview";
         if (toolName === "market_structure_check") {
           label = "Checking market structure";
         }

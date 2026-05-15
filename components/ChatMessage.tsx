@@ -3,6 +3,12 @@
 import { useEffect, useRef } from "react";
 import { Shield, User, Loader2, AlertCircle } from "lucide-react";
 
+export interface ChatStep {
+  label: string;
+  status: "running" | "done" | "error";
+  id: string;
+}
+
 export interface ChatMessageData {
   id: string;
   role: "user" | "assistant" | "system";
@@ -11,6 +17,7 @@ export interface ChatMessageData {
   cardType?: "trade-plan" | "risk-result" | "quote" | null;
   cardData?: Record<string, unknown> | null;
   isLoading?: boolean;
+  steps?: ChatStep[];
 }
 
 interface Props {
@@ -71,7 +78,21 @@ export function ChatMessage({ message }: Props) {
             : "bg-white border border-border text-foreground rounded-tl-md shadow-soft"
         }`}
       >
-        {message.isLoading ? (
+        {message.steps && message.steps.length > 0 && (
+          <div className="flex flex-col gap-1.5 mb-2">
+            {message.steps.map(step => (
+              <div key={step.id} className="flex items-center gap-2 text-xs">
+                {step.status === "running" && <Loader2 className="w-3 h-3 animate-spin text-electric" />}
+                {step.status === "done" && <Shield className="w-3 h-3 text-emerald-500" />}
+                {step.status === "error" && <AlertCircle className="w-3 h-3 text-red-500" />}
+                <span className={step.status === "running" ? "text-foreground font-medium" : "text-muted-foreground"}>
+                  {step.label}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {message.isLoading && (!message.steps || message.steps.length === 0) ? (
           <div className="flex items-center gap-2 text-muted-foreground">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
             <span className="text-xs font-medium">Processing…</span>

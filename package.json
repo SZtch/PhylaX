@@ -10,7 +10,7 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:migrate": "drizzle-kit migrate",
-    "test": "npx tsx lib/__tests__/privy-auth.test.ts && npx tsx lib/__tests__/execution-foundation.test.ts && npx tsx lib/__tests__/e2e-trade-flow.test.ts && npx tsx lib/__tests__/orchestration.test.ts && npx tsx lib/__tests__/narrative.test.ts"
+    "test": "npx tsx lib/__tests__/privy-auth.test.ts && npx tsx lib/__tests__/execution-foundation.test.ts && npx tsx lib/__tests__/e2e-trade-flow.test.ts && npx tsx lib/__tests__/orchestration.test.ts && npx tsx lib/__tests__/narrative.test.ts && npx tsx lib/__tests__/sse.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",

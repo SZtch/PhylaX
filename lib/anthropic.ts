@@ -63,11 +63,14 @@ export interface AgentRunResult {
   toolCallsLog: unknown[];
 }
 
+export type AgentProgressCallback = (type: string, data: Record<string, unknown>) => void;
+
 export async function runAgentLoop(
   message: string,
   chainHint?: string,
   history: { role: "user" | "assistant"; content: string }[] = [],
-  conversationId: string = ""
+  conversationId: string = "",
+  onProgress?: AgentProgressCallback
 ): Promise<AgentRunResult> {
   if (!anthropic) {
     return fallbackAgentParser(message, chainHint);
@@ -91,6 +94,9 @@ export async function runAgentLoop(
   const toolCallsLog: unknown[] = [];
 
   while (iterations < MAX_ITERATIONS) {
+    if (iterations === 0) {
+      onProgress?.("step", { label: "Understanding request", status: "running", timestamp: new Date().toISOString() });
+    }
     iterations++;
 
     let response;
@@ -120,6 +126,7 @@ export async function runAgentLoop(
     });
 
     if (response.stop_reason !== "tool_use") {
+      onProgress?.("step", { label: "Synthesizing result", status: "running", timestamp: new Date().toISOString() });
       // Loop ends, we have a final text response
       const textContent = response.content.find((c: unknown) => (c as Record<string, unknown>).type === "text") as Record<string, unknown> | undefined;
       return {
@@ -152,6 +159,15 @@ export async function runAgentLoop(
       const executionPromises = finalBlocksToExecute.map(async (block) => {
         const toolName = block.name;
         const toolInput = block.input as Record<string, unknown>;
+        
+        let label = "Using tool";
+        if (toolName === "get_signals") label = "Searching tokens";
+        if (toolName === "scan_token") label = `Scanning ${toolInput.symbol || "token"} risk`;
+        if (toolName === "search_token") label = "Searching token";
+        if (toolName === "get_swap_quote") label = "Checking quote";
+        
+        onProgress?.("tool_start", { id: block.id, label, status: "running", timestamp: new Date().toISOString() });
+
         const toolDef = registry.get(toolName);
 
         const startTime = Date.now();
@@ -171,6 +187,13 @@ export async function runAgentLoop(
         }
 
         const latencyMs = Date.now() - startTime;
+        
+        if (isError) {
+          onProgress?.("partial_failure", { id: block.id, label, status: "error", error: result, timestamp: new Date().toISOString() });
+        } else {
+          onProgress?.("tool_result", { id: block.id, label, status: "done", timestamp: new Date().toISOString() });
+        }
+        
         return { block, toolName, toolInput, result, isError, latencyMs };
       });
 

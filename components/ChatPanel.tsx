@@ -223,18 +223,77 @@ export function ChatPanel({
       if (getIdentityToken) { try { identityToken = await getIdentityToken(); } catch { /* */ } }
       const headers: Record<string, string> = { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}`, "x-wallet-address": walletAddress ?? "" };
       if (identityToken) headers["x-privy-identity-token"] = identityToken;
-      const res = await fetch("/api/chat", { method: "POST", headers, body: JSON.stringify({ conversationId, message: text.trim(), chain: selectedChain.id }) });
-      const data = await res.json();
+      
+      const res = await fetch("/api/chat/stream", { method: "POST", headers, body: JSON.stringify({ conversationId, message: text.trim(), chain: selectedChain.id }) });
+      
       if (!res.ok) {
-        let errorContent = data.error ?? "Something went wrong. Please try again.";
+        let errorContent = "Something went wrong. Please try again.";
+        try {
+          const data = await res.json();
+          errorContent = data.error ?? errorContent;
+        } catch { /* */ }
         if (res.status === 401) errorContent = errorContent.includes("expired") ? "Session expired. Please reconnect your wallet." : errorContent;
         else if (res.status === 403) errorContent = "Wallet mismatch. Please reconnect.";
         setMessages(prev => prev.map(m => m.id === loadingMsg.id ? { ...m, isLoading: false, content: errorContent, role: "system" as const } : m));
         setChatState("FAILED"); return;
       }
-      const newState: ChatState = data.chatState ?? "WALLET_CONNECTED";
-      setMessages(prev => prev.map(m => m.id === loadingMsg.id ? { ...m, isLoading: false, content: data.agentMessage ?? "Done.", pipelineData: data.pipelineData ?? null } : m));
-      setChatState(newState);
+
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("text/event-stream")) {
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("No reader available");
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          
+          let newlineIndex;
+          while ((newlineIndex = buffer.indexOf("\n\n")) >= 0) {
+            const chunk = buffer.slice(0, newlineIndex);
+            buffer = buffer.slice(newlineIndex + 2);
+            
+            if (chunk.startsWith("event: ")) {
+              const eventTypeLine = chunk.split("\n")[0];
+              const dataLine = chunk.split("\n").find(l => l.startsWith("data: "));
+              if (!dataLine) continue;
+              
+              const type = eventTypeLine.replace("event: ", "").trim();
+              const data = JSON.parse(dataLine.replace("data: ", ""));
+              
+              if (type === "step" || type === "tool_start" || type === "tool_result" || type === "partial_failure") {
+                setMessages(prev => prev.map(m => {
+                  if (m.id === loadingMsg.id) {
+                    const currentSteps = m.steps ? [...m.steps] : [];
+                    const stepId = data.id || `step-${Date.now()}`;
+                    const existingIdx = currentSteps.findIndex(s => s.id === stepId);
+                    
+                    if (existingIdx >= 0) {
+                      currentSteps[existingIdx] = { ...currentSteps[existingIdx], status: data.status, label: data.label || currentSteps[existingIdx].label };
+                    } else {
+                      currentSteps.push({ id: stepId, label: data.label, status: data.status });
+                    }
+                    return { ...m, steps: currentSteps };
+                  }
+                  return m;
+                }));
+              } else if (type === "final") {
+                setMessages(prev => prev.map(m => m.id === loadingMsg.id ? { ...m, isLoading: false, content: data.agentMessage ?? "Done.", pipelineData: data.pipelineData ?? null } : m));
+                if (data.chatState) setChatState(data.chatState as ChatState);
+              } else if (type === "error") {
+                throw new Error(data.error);
+              }
+            }
+          }
+        }
+      } else {
+        const data = await res.json();
+        const newState: ChatState = data.chatState ?? "WALLET_CONNECTED";
+        setMessages(prev => prev.map(m => m.id === loadingMsg.id ? { ...m, isLoading: false, content: data.agentMessage ?? "Done.", pipelineData: data.pipelineData ?? null } : m));
+        setChatState(newState);
+      }
     } catch {
       setMessages(prev => prev.map(m => m.id === loadingMsg.id ? { ...m, isLoading: false, content: "Network error. Check your connection.", role: "system" as const } : m));
       setChatState("FAILED");

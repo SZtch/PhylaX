@@ -201,13 +201,13 @@ export default function Home() {
         />
         {/* Mobile sidebar drawer */}
         <div className={`fixed top-12 bottom-0 left-0 z-40 w-[260px] bg-muted/30 backdrop-blur-xl shadow-xl lg:hidden sidebar-mobile-drawer ${mobileSidebar ? "translate-x-0" : "-translate-x-full"}`}>
-          <AppSidebar {...sidebarProps} onCollapse={() => setMobileSidebar(false)} />
+          <AppSidebar {...sidebarProps} />
         </div>
 
         {/* Desktop sidebar — smooth width transition */}
         <div className={`hidden lg:block shrink-0 overflow-hidden sidebar-shell ${sidebarOpen ? "w-[260px]" : "w-0"}`}>
           <div className="w-[260px] h-full">
-            <AppSidebar {...sidebarProps} onCollapse={() => setSidebarOpen(false)} />
+            <AppSidebar {...sidebarProps} />
           </div>
         </div>
 

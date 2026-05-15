@@ -5,11 +5,9 @@ import {
   Send,
   Shield,
   Scan,
-  Layers,
   Eye,
   BarChart3,
   Search,
-  PenTool,
 } from "lucide-react";
 import { ChatMessage, type ChatMessageData } from "./ChatMessage";
 import { TradePlanCard } from "./TradePlanCard";
@@ -122,7 +120,6 @@ export function ChatPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const isWalletReady = isAuthenticated && hasWallet;
   const canChat = isAuthenticated; // email login is enough for chat
   const prevAuthenticated = useRef(isAuthenticated);
   const hasRenamed = useRef(false);
@@ -190,7 +187,7 @@ export function ChatPanel({
       setMessages(prev => prev.map(m => m.id === loadingMsg.id ? { ...m, isLoading: false, content: "Network error. Check your connection.", role: "system" as const } : m));
       setChatState("FAILED");
     } finally { setIsLoading(false); }
-  }, [canChat, isLoading, walletAddress, getAccessToken, getIdentityToken]);
+  }, [canChat, isLoading, walletAddress, getAccessToken, getIdentityToken, onRenameSession]);
 
   const handleSuggestionClick = (prompt: string) => {
     if (!canChat) { onSignIn(); return; }
@@ -265,16 +262,8 @@ export function ChatPanel({
                   How can I help you trade?
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  {canChat
-                    ? "Scan tokens, build quotes, or explore low-risk opportunities on X Layer."
-                    : "Sign in to start scanning tokens, building quotes, and trading on X Layer."
-                  }
+                  Sign in to start scanning tokens, building quotes, and trading on X Layer.
                 </p>
-                {!canChat && (
-                  <button onClick={onSignIn} className="mt-4 inline-flex items-center rounded-full bg-gradient-brand text-white px-6 py-2 text-sm font-medium hover:shadow-glow transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]">
-                    Sign in to get started
-                  </button>
-                )}
               </div>
             </EmptyStateWrapper>
 

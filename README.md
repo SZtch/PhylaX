@@ -44,7 +44,7 @@
 
 ```bash
 git clone <repo>
-cd aegisx-okx-agent
+cd phylax-okx-agent
 npm install
 cp .env.example .env.local
 npm run dev

@@ -24,7 +24,6 @@ interface Props {
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
   onChangeView: (view: SidebarView) => void;
-  onCollapse: () => void;
 }
 
 export function AppSidebar({
@@ -35,7 +34,6 @@ export function AppSidebar({
   onSelectSession,
   onDeleteSession,
   onChangeView,
-  onCollapse,
 }: Props) {
   return (
     <aside className="flex flex-col h-full w-full bg-muted/20 overflow-hidden">

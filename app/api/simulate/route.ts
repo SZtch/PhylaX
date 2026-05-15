@@ -2,8 +2,18 @@ import { NextResponse } from "next/server";
 import { simulateSwap, OkxRealModeError } from "../../../lib/okx";
 import { createApproval } from "../../../lib/approval-store";
 import { checkGuardrails } from "../../../lib/guardrails";
+import { verifyWalletSession } from "../../../lib/privy-auth";
 
 export async function POST(req: Request) {
+  // ── Wallet session enforcement ──────────────────────────────────────────
+  const auth = await verifyWalletSession(req);
+  if (!auth.authenticated) {
+    return NextResponse.json(
+      { error: auth.error ?? "Wallet connection required." },
+      { status: auth.statusCode }
+    );
+  }
+
   try {
     const {
       address,

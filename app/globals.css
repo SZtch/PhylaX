@@ -68,6 +68,14 @@
   --gradient-line: linear-gradient(90deg, transparent, oklch(0.62 0.19 260), oklch(0.7 0.13 280), oklch(0.82 0.11 220), transparent);
   --shadow-soft: 0 10px 30px -12px oklch(0.21 0.05 265 / 0.15);
   --shadow-glow: 0 20px 60px -20px oklch(0.62 0.19 260 / 0.4);
+
+  /* ─── Animation timing tokens ─── */
+  --ease-out-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-in-out-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 150ms;
+  --dur-normal: 200ms;
+  --dur-layout: 260ms;
 }
 
 @layer base {
@@ -107,6 +115,74 @@
     background: color-mix(in oklab, var(--navy) 70%, transparent);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
+  }
+}
+
+/* ─── Dropdown animation utility ─── */
+@layer utilities {
+  .dropdown-panel {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+    pointer-events: none;
+    transition:
+      opacity var(--dur-fast) var(--ease-out-smooth),
+      transform var(--dur-fast) var(--ease-out-smooth);
+  }
+  .dropdown-panel.is-open {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+  }
+}
+
+/* ─── Sidebar layout transition (GPU-accelerated) ─── */
+@layer utilities {
+  .sidebar-shell {
+    transition: width var(--dur-layout) var(--ease-out-smooth);
+    will-change: width;
+  }
+  .sidebar-mobile-overlay {
+    transition:
+      opacity var(--dur-normal) var(--ease-out-smooth),
+      backdrop-filter var(--dur-normal) var(--ease-out-smooth),
+      -webkit-backdrop-filter var(--dur-normal) var(--ease-out-smooth);
+  }
+  .sidebar-mobile-drawer {
+    transition: transform var(--dur-layout) var(--ease-out-smooth);
+    will-change: transform;
+  }
+  .scroll-contain {
+    overscroll-behavior: contain;
+  }
+  .scroll-anchor-none {
+    overflow-anchor: none;
+  }
+}
+
+/* ─── View-switch fade ─── */
+@layer utilities {
+  .view-enter {
+    animation: viewFadeIn var(--dur-normal) var(--ease-out-smooth) both;
+  }
+}
+@keyframes viewFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Chevron rotation ─── */
+@layer utilities {
+  .chevron-rotate {
+    transition: transform var(--dur-fast) var(--ease-out-smooth);
+  }
+  .chevron-rotate.is-open {
+    transform: rotate(180deg);
   }
 }
 
@@ -200,5 +276,23 @@
   }
   .bg-navy-deep {
     background: radial-gradient(1200px 600px at 50% 0%, oklch(0.32 0.12 270 / 0.6), transparent 60%), oklch(0.18 0.05 265);
+  }
+}
+
+/* ═══ Accessibility: prefers-reduced-motion ═══ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .sidebar-shell,
+  .sidebar-mobile-drawer,
+  .dropdown-panel,
+  .chevron-rotate {
+    transition: none !important;
   }
 }

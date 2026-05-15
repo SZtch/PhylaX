@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, Wallet, ChevronDown } from "lucide-react";
 import { SUPPORTED_CHAINS, type ChainConfig } from "../lib/chains";
 
@@ -46,6 +45,12 @@ export function Navbar({
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [chainOpen, setChainOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    // Trigger entrance animation after mount
+    requestAnimationFrame(() => setMounted(true));
+  }, []);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -66,19 +71,21 @@ export function Navbar({
   const subtextColor = scrolled ? "text-white/70" : "text-foreground/60";
 
   return (
-    <motion.header
-      initial={{ y: -20, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] as const }}
-      className={`fixed top-0 inset-x-0 z-50 transition-all duration-500 ${
+    <header
+      className={`fixed top-0 inset-x-0 z-50 transition-[background-color,border-color,backdrop-filter] duration-500 ease-out ${
         scrolled ? "glass-dark border-b border-white/10" : "bg-transparent"
       }`}
+      style={{
+        transform: mounted ? "translateY(0)" : "translateY(-20px)",
+        opacity: mounted ? 1 : 0,
+        transition: "transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.5s ease-out, backdrop-filter 0.5s ease-out",
+      }}
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-10 h-16 md:h-20 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 shrink-0">
-          <span className={`text-xl md:text-2xl font-bold tracking-tight transition-colors ${textColor}`}>
-            Aegis<span className="text-gradient-brand">X</span>
+          <span className={`text-xl md:text-2xl font-bold tracking-tight transition-colors duration-300 ${textColor}`}>
+            Phyla<span className="text-gradient-brand">X</span>
           </span>
         </Link>
 
@@ -91,13 +98,13 @@ export function Navbar({
                 <a
                   key={it.label}
                   href={it.href}
-                  className={`relative group px-4 py-2 text-sm rounded-full transition-all duration-300 ${
+                  className={`relative group px-4 py-2 text-sm rounded-full transition-all duration-200 ${
                     scrolled ? "text-white/80 hover:text-white" : "text-foreground/70 hover:text-foreground"
                   }`}
                 >
                   {it.label}
                   <span
-                    className={`absolute left-4 right-4 -bottom-0.5 h-px scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left ${
+                    className={`absolute left-4 right-4 -bottom-0.5 h-px scale-x-0 group-hover:scale-x-100 transition-transform duration-250 origin-left ${
                       scrolled ? "bg-gradient-to-r from-electric to-indigo-soft" : "bg-foreground/40"
                     }`}
                   />
@@ -107,7 +114,7 @@ export function Navbar({
               <button
                 onClick={onLaunch}
                 aria-label="Launch Agent Console"
-                className="ml-2 relative inline-flex items-center rounded-full bg-gradient-brand text-white px-5 py-2 text-sm font-medium hover:shadow-glow transition-all duration-300 hover:scale-[1.03]"
+                className="ml-2 relative inline-flex items-center rounded-full bg-gradient-brand text-white px-5 py-2 text-sm font-medium hover:shadow-glow transition-all duration-200 hover:scale-[1.03] active:scale-[0.98]"
                 style={{ boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.2), 0 10px 30px -10px oklch(0.62 0.19 260 / 0.5)" }}
               >
                 Launch App
@@ -121,7 +128,7 @@ export function Navbar({
               <a
                 href="#"
                 onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-                className={`px-4 py-2 text-sm rounded-full transition-all duration-300 ${subtextColor} hover:${textColor}`}
+                className={`px-4 py-2 text-sm rounded-full transition-all duration-200 ${subtextColor} hover:${textColor}`}
               >
                 Overview
               </a>
@@ -132,7 +139,7 @@ export function Navbar({
                   onClick={(e) => { e.stopPropagation(); setChainOpen((o) => !o); }}
                   aria-label="Select chain"
                   aria-expanded={chainOpen}
-                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium border transition-all duration-300 ${
+                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium border transition-all duration-200 ${
                     scrolled
                       ? "bg-white/10 border-white/20 text-white/90 hover:bg-white/20"
                       : "bg-white border-border text-foreground hover:border-electric/30"
@@ -140,54 +147,47 @@ export function Navbar({
                 >
                   <ChainIcon label={selectedChain.iconLabel} />
                   <span className="hidden lg:inline">{selectedChain.name}</span>
-                  <ChevronDown size={14} className={`transition-transform ${chainOpen ? "rotate-180" : ""}`} />
+                  <ChevronDown size={14} className={`chevron-rotate ${chainOpen ? "is-open" : ""}`} />
                 </button>
 
-                <AnimatePresence>
-                  {chainOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -4, scale: 0.95 }}
-                      transition={{ duration: 0.15 }}
-                      className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-white border border-border shadow-soft overflow-hidden z-50"
+                {/* Always-mounted chain dropdown */}
+                <div
+                  className={`absolute right-0 top-full mt-2 w-56 rounded-2xl bg-white border border-border shadow-soft overflow-hidden z-50 dropdown-panel ${chainOpen ? "is-open" : ""}`}
+                >
+                  {SUPPORTED_CHAINS.map((c) => (
+                    <button
+                      key={c.id}
+                      disabled={!c.enabled}
+                      onClick={() => { if (c.enabled) { onChainChange(c); setChainOpen(false); } }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left transition-colors duration-120 ${
+                        c.id === selectedChain.id
+                          ? "bg-electric/10 text-electric font-bold"
+                          : c.enabled
+                          ? "text-foreground hover:bg-muted"
+                          : "text-muted-foreground/50 cursor-not-allowed"
+                      }`}
                     >
-                      {SUPPORTED_CHAINS.map((c) => (
-                        <button
-                          key={c.id}
-                          disabled={!c.enabled}
-                          onClick={() => { if (c.enabled) { onChainChange(c); setChainOpen(false); } }}
-                          className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left transition-colors ${
-                            c.id === selectedChain.id
-                              ? "bg-electric/10 text-electric font-bold"
-                              : c.enabled
-                              ? "text-foreground hover:bg-muted"
-                              : "text-muted-foreground/50 cursor-not-allowed"
-                          }`}
-                        >
-                          <ChainIcon label={c.iconLabel} />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium">{c.name}</div>
-                            <div className="text-[10px] text-muted-foreground">Index: {c.chainIndex}</div>
-                          </div>
-                          {c.id === selectedChain.id && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-electric" />
-                          )}
-                          {!c.enabled && c.disabledReason && (
-                            <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">{c.disabledReason}</span>
-                          )}
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                      <ChainIcon label={c.iconLabel} />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium">{c.name}</div>
+                        <div className="text-[10px] text-muted-foreground">Index: {c.chainIndex}</div>
+                      </div>
+                      {c.id === selectedChain.id && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-electric" />
+                      )}
+                      {!c.enabled && c.disabledReason && (
+                        <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">{c.disabledReason}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Connect Wallet */}
               <button
                 onClick={onConnectWallet}
                 aria-label={walletConnected ? "Wallet connected" : "Connect wallet"}
-                className={`ml-1 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium border transition-all duration-300 ${
+                className={`ml-1 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium border transition-all duration-200 ${
                   walletConnected
                     ? scrolled
                       ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-300"
@@ -218,7 +218,7 @@ export function Navbar({
               <button
                 onClick={(e) => { e.stopPropagation(); setChainOpen((o) => !o); }}
                 aria-label="Select chain"
-                className={`p-2 rounded-full transition-colors ${scrolled ? "text-white/80" : "text-foreground/70"}`}
+                className={`p-2 rounded-full transition-colors duration-150 ${scrolled ? "text-white/80" : "text-foreground/70"}`}
               >
                 <ChainIcon label={selectedChain.iconLabel} size={22} />
               </button>
@@ -226,7 +226,7 @@ export function Navbar({
               <button
                 onClick={onConnectWallet}
                 aria-label={walletConnected ? "Wallet connected" : "Connect wallet"}
-                className={`p-2 rounded-full transition-colors ${
+                className={`p-2 rounded-full transition-colors duration-150 ${
                   walletConnected
                     ? scrolled ? "text-emerald-300" : "text-emerald-600"
                     : scrolled ? "text-white/70" : "text-foreground/60"
@@ -239,7 +239,7 @@ export function Navbar({
           <button
             aria-label="Toggle navigation menu"
             onClick={() => setMobileOpen((o) => !o)}
-            className={`p-2 rounded-full transition-colors ${scrolled ? "text-white" : "text-foreground"}`}
+            className={`p-2 rounded-full transition-colors duration-150 ${scrolled ? "text-white" : "text-foreground"}`}
           >
             {mobileOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
@@ -247,116 +247,105 @@ export function Navbar({
       </div>
 
       {/* ─── Mobile Drawer ─── */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
-            className="md:hidden overflow-hidden bg-navy text-white"
-          >
-            <div className="px-6 py-6 flex flex-col gap-1">
-              {!appMode && (
-                <>
-                  {landingLinks.map((it) => (
-                    <a
-                      key={it.label}
-                      href={it.href}
-                      onClick={() => setMobileOpen(false)}
-                      className="px-3 py-3 rounded-xl text-base text-white/80 hover:bg-white/10 hover:text-white"
-                    >
-                      {it.label}
-                    </a>
-                  ))}
-                  <button
-                    onClick={() => { setMobileOpen(false); onLaunch?.(); }}
-                    className="mt-2 rounded-xl bg-gradient-brand text-white px-5 py-3 text-center font-medium"
-                  >
-                    Launch App
-                  </button>
-                </>
-              )}
-
-              {appMode && (
-                <>
-                  {/* Chain selector in mobile menu */}
-                  <div className="px-3 py-2">
-                    <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-2">Network</p>
-                    <div className="flex gap-2">
-                      {SUPPORTED_CHAINS.map((c) => (
-                        <button
-                          key={c.id}
-                          disabled={!c.enabled}
-                          onClick={() => { onChainChange(c); }}
-                          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
-                            c.id === selectedChain.id
-                              ? "bg-electric/20 border-electric/40 text-white"
-                              : c.enabled
-                              ? "border-white/10 text-white/60 hover:bg-white/10"
-                              : "border-white/5 text-white/30 cursor-not-allowed"
-                          }`}
-                        >
-                          <ChainIcon label={c.iconLabel} size={18} />
-                          {c.name}
-                          {!c.enabled && <span className="text-[9px] uppercase">Soon</span>}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => { setMobileOpen(false); onConnectWallet(); }}
-                    className={`mt-2 rounded-xl px-5 py-3 text-center font-medium border ${
-                      walletConnected
-                        ? "border-emerald-400/40 text-emerald-300 bg-emerald-500/20"
-                        : "border-white/20 text-white/80 hover:bg-white/10"
-                    }`}
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <Wallet size={16} />
-                      {walletConnected ? "Wallet Connected" : "Connect Wallet"}
-                    </span>
-                  </button>
-                </>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Mobile chain dropdown overlay (app mode) */}
-      <AnimatePresence>
-        {chainOpen && appMode && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            className="md:hidden absolute right-4 top-full mt-1 w-56 rounded-2xl bg-white border border-border shadow-soft overflow-hidden z-50"
-          >
-            {SUPPORTED_CHAINS.map((c) => (
+      <div
+        className="md:hidden overflow-hidden transition-all duration-250 ease-out"
+        style={{
+          maxHeight: mobileOpen ? "400px" : "0px",
+          opacity: mobileOpen ? 1 : 0,
+        }}
+      >
+        <div className="bg-navy text-white px-6 py-6 flex flex-col gap-1">
+          {!appMode && (
+            <>
+              {landingLinks.map((it) => (
+                <a
+                  key={it.label}
+                  href={it.href}
+                  onClick={() => setMobileOpen(false)}
+                  className="px-3 py-3 rounded-xl text-base text-white/80 hover:bg-white/10 hover:text-white transition-colors duration-150"
+                >
+                  {it.label}
+                </a>
+              ))}
               <button
-                key={c.id}
-                disabled={!c.enabled}
-                onClick={() => { if (c.enabled) { onChainChange(c); setChainOpen(false); } }}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left transition-colors ${
-                  c.id === selectedChain.id
-                    ? "bg-electric/10 text-electric font-bold"
-                    : c.enabled
-                    ? "text-foreground hover:bg-muted"
-                    : "text-muted-foreground/50 cursor-not-allowed"
+                onClick={() => { setMobileOpen(false); onLaunch?.(); }}
+                className="mt-2 rounded-xl bg-gradient-brand text-white px-5 py-3 text-center font-medium"
+              >
+                Launch App
+              </button>
+            </>
+          )}
+
+          {appMode && (
+            <>
+              {/* Chain selector in mobile menu */}
+              <div className="px-3 py-2">
+                <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-2">Network</p>
+                <div className="flex gap-2">
+                  {SUPPORTED_CHAINS.map((c) => (
+                    <button
+                      key={c.id}
+                      disabled={!c.enabled}
+                      onClick={() => { onChainChange(c); }}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium border transition-colors duration-150 ${
+                        c.id === selectedChain.id
+                          ? "bg-electric/20 border-electric/40 text-white"
+                          : c.enabled
+                          ? "border-white/10 text-white/60 hover:bg-white/10"
+                          : "border-white/5 text-white/30 cursor-not-allowed"
+                      }`}
+                    >
+                      <ChainIcon label={c.iconLabel} size={18} />
+                      {c.name}
+                      {!c.enabled && <span className="text-[9px] uppercase">Soon</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={() => { setMobileOpen(false); onConnectWallet(); }}
+                className={`mt-2 rounded-xl px-5 py-3 text-center font-medium border transition-colors duration-150 ${
+                  walletConnected
+                    ? "border-emerald-400/40 text-emerald-300 bg-emerald-500/20"
+                    : "border-white/20 text-white/80 hover:bg-white/10"
                 }`}
               >
-                <ChainIcon label={c.iconLabel} />
-                <span>{c.name}</span>
-                {!c.enabled && c.disabledReason && (
-                  <span className="text-[10px] text-muted-foreground/60 ml-auto">{c.disabledReason}</span>
-                )}
+                <span className="inline-flex items-center gap-2">
+                  <Wallet size={16} />
+                  {walletConnected ? "Wallet Connected" : "Connect Wallet"}
+                </span>
               </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.header>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile chain dropdown overlay (app mode) — always mounted, CSS animated */}
+      <div
+        className={`md:hidden absolute right-4 top-full mt-1 w-56 rounded-2xl bg-white border border-border shadow-soft overflow-hidden z-50 dropdown-panel ${chainOpen && appMode ? "is-open" : ""}`}
+      >
+        {SUPPORTED_CHAINS.map((c) => (
+          <button
+            key={c.id}
+            disabled={!c.enabled}
+            onClick={() => { if (c.enabled) { onChainChange(c); setChainOpen(false); } }}
+            className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left transition-colors duration-120 ${
+              c.id === selectedChain.id
+                ? "bg-electric/10 text-electric font-bold"
+                : c.enabled
+                ? "text-foreground hover:bg-muted"
+                : "text-muted-foreground/50 cursor-not-allowed"
+            }`}
+          >
+            <ChainIcon label={c.iconLabel} />
+            <span>{c.name}</span>
+            {!c.enabled && c.disabledReason && (
+              <span className="text-[10px] text-muted-foreground/60 ml-auto">{c.disabledReason}</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </header>
   );
 }

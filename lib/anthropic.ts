@@ -13,7 +13,7 @@ export async function parseThesis(thesis: string): Promise<ThesisIntent> {
 
   try {
     const prompt = `
-You are a DeFi intent parser for AegisX, a risk-first trading agent.
+You are a DeFi intent parser for PhylaX, a risk-first trading agent.
 Extract the trading intent from the user's thesis.
 
 The output must be ONLY valid JSON matching this schema:

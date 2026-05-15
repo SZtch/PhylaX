@@ -36,7 +36,7 @@ export interface WalletState {
   chainIdHex: string | null;
   /** Numeric chain ID */
   chainId: number | null;
-  /** Whether the wallet is on the correct chain for the selected AegisX chain */
+  /** Whether the wallet is on the correct chain for the selected PhylaX chain */
   correctNetwork: boolean;
   /** Native balance in human-readable form (e.g. "1.234") */
   nativeBalance: string | null;

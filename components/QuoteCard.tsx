@@ -1,0 +1,314 @@
+"use client";
+
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  ArrowRight,
+  Eye,
+  AlertTriangle,
+  ShieldCheck,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  ExternalLink,
+  Lock,
+} from "lucide-react";
+import { useState, useCallback } from "react";
+import type { SimulationResult } from "../lib/schemas";
+
+type ExecutionState =
+  | "idle"
+  | "confirming"
+  | "building_tx"
+  | "awaiting_signature"
+  | "submitted"
+  | "confirmed"
+  | "failed"
+  | "rejected"
+  | "wrong_chain";
+
+interface Props {
+  quote: SimulationResult;
+  fromSymbol: string;
+  toSymbol?: string;
+  approvalId?: string;
+  showExecute?: boolean;
+  getAccessToken?: () => Promise<string | null>;
+  getIdentityToken?: () => Promise<string | null>;
+  walletAddress?: string | null;
+}
+
+interface EthereumProvider {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+}
+
+function getEthereumProvider(): EthereumProvider | null {
+  if (typeof window === "undefined") return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const w = window as any;
+  return w.ethereum ?? null;
+}
+
+const WALLET_ERROR_CODES: Record<number, ExecutionState> = {
+  4001: "rejected",
+  4100: "rejected",
+  4902: "wrong_chain",
+};
+
+export function QuoteCard({
+  quote,
+  fromSymbol,
+  toSymbol,
+  approvalId,
+  showExecute = false,
+  getAccessToken,
+  getIdentityToken,
+  walletAddress,
+}: Props) {
+  const slippageOk = quote.slippage < 3;
+  const [execState, setExecState] = useState<ExecutionState>("idle");
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
+  const [execError, setExecError] = useState<string | null>(null);
+  const [showErrorDetail, setShowErrorDetail] = useState(false);
+
+  const handleExecute = useCallback(async () => {
+    if (!approvalId || !walletAddress) return;
+    setExecState("confirming");
+    setExecError(null);
+
+    try {
+      let authToken = "client-token";
+      let identityToken: string | null = null;
+      if (getAccessToken) { try { const t = await getAccessToken(); if (t) authToken = t; } catch { /* */ } }
+      if (getIdentityToken) { try { identityToken = await getIdentityToken(); } catch { /* */ } }
+
+      setExecState("building_tx");
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${authToken}`,
+        "x-wallet-address": walletAddress,
+      };
+      if (identityToken) headers["x-privy-identity-token"] = identityToken;
+
+      const execRes = await fetch("/api/execute", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          approvalId,
+          amountUsd: quote.expectedOutputUsd,
+          quoteSnapshot: { slippage: quote.slippage, quoteCreatedAt: Date.now() },
+        }),
+      });
+
+      const execData = await execRes.json() as {
+        executionId?: string;
+        unsignedTx?: { to: string; data: string; value: string; chainId?: string; gas?: string; gasLimit?: string; gasPrice?: string; maxFeePerGas?: string; maxPriorityFeePerGas?: string; };
+        error?: string; message?: string; result?: { status: string };
+      };
+
+      if (execData.result?.status === "execution_disabled") {
+        setExecState("idle");
+        setExecError(execData.message ?? "Live execution is disabled.");
+        return;
+      }
+
+      if (!execRes.ok || !execData.unsignedTx) {
+        setExecState("failed");
+        setExecError(execData.error ?? "Failed to build transaction.");
+        return;
+      }
+
+      setExecState("awaiting_signature");
+      const provider = getEthereumProvider();
+      if (!provider) {
+        setExecState("failed");
+        setExecError("No wallet provider found. Please install MetaMask or use Privy embedded wallet.");
+        return;
+      }
+
+      const tx = execData.unsignedTx;
+      const txParams: Record<string, string> = { from: walletAddress, to: tx.to, data: tx.data, value: tx.value };
+      if (tx.gas) txParams.gas = tx.gas;
+      if (tx.gasLimit) txParams.gas = tx.gasLimit;
+      if (tx.gasPrice) txParams.gasPrice = tx.gasPrice;
+      if (tx.maxFeePerGas) txParams.maxFeePerGas = tx.maxFeePerGas;
+      if (tx.maxPriorityFeePerGas) txParams.maxPriorityFeePerGas = tx.maxPriorityFeePerGas;
+
+      let hash: string;
+      try {
+        hash = (await provider.request({ method: "eth_sendTransaction", params: [txParams] })) as string;
+      } catch (walletError: unknown) {
+        const code = (walletError as { code?: number })?.code;
+        if (code && WALLET_ERROR_CODES[code]) {
+          setExecState(WALLET_ERROR_CODES[code]);
+          setExecError(code === 4001 ? "Transaction rejected by wallet." : code === 4902 ? "Please switch to the correct chain." : "Wallet authorization failed.");
+        } else {
+          setExecState("failed");
+          setExecError(`Wallet error: ${walletError instanceof Error ? walletError.message : String(walletError)}`);
+        }
+        return;
+      }
+
+      setTxHash(hash);
+      setExecState("submitted");
+
+      try {
+        const confirmRes = await fetch("/api/confirm", { method: "POST", headers, body: JSON.stringify({ executionId: execData.executionId, txHash: hash, chainId: tx.chainId }) });
+        const confirmData = await confirmRes.json() as { status?: string; explorerUrl?: string };
+        if (confirmData.explorerUrl) setExplorerUrl(confirmData.explorerUrl);
+        if (confirmData.status === "confirmed") setExecState("confirmed");
+        else if (confirmData.status === "reverted" || confirmData.status === "failed") { setExecState("failed"); setExecError("Transaction reverted on-chain."); }
+      } catch { /* tx submitted, user checks explorer */ }
+    } catch (err) {
+      setExecState("failed");
+      setExecError(`Execution error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [approvalId, walletAddress, getAccessToken, getIdentityToken, quote]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white border border-border rounded-2xl overflow-hidden shadow-soft"
+    >
+      <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
+        <Eye className="w-4 h-4 text-electric" />
+        <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">Trade Preview</h4>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {/* Route */}
+        <div className="flex items-center gap-3">
+          <span className="font-bold text-foreground text-sm">{fromSymbol}</span>
+          <ArrowRight className="w-4 h-4 text-muted-foreground" />
+          <span className="font-bold text-foreground text-sm">{toSymbol ?? "Target"}</span>
+        </div>
+
+        {/* Metrics */}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-muted/40 rounded-xl px-3 py-2.5">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Expected Output</p>
+            <p className="text-sm font-bold text-foreground">${quote.expectedOutputUsd.toFixed(2)}</p>
+          </div>
+          <div className="bg-muted/40 rounded-xl px-3 py-2.5">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Slippage</p>
+            <p className={`text-sm font-bold ${slippageOk ? "text-emerald-600" : "text-red-600"}`}>{quote.slippage.toFixed(2)}%</p>
+          </div>
+          <div className="bg-muted/40 rounded-xl px-3 py-2.5">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Gas Fee</p>
+            <p className="text-sm font-bold text-foreground">${quote.gasFeeUsd.toFixed(4)}</p>
+          </div>
+        </div>
+
+        {/* Route info */}
+        <div className="text-[10px] text-muted-foreground bg-muted/40 rounded-lg px-3 py-2 font-mono">
+          Route: {quote.route}
+        </div>
+
+        {/* Slippage warning */}
+        {!slippageOk && (
+          <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+            High slippage detected. Review carefully before confirming.
+          </div>
+        )}
+
+        {/* ── Execution Section ── */}
+        <AnimatePresence mode="wait">
+          {showExecute && approvalId && execState === "idle" && (
+            <motion.div key="confirm-button" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="space-y-3 pt-3 border-t border-border/50">
+              <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
+                <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 text-blue-500 mt-0.5" />
+                <span>Your wallet will ask you to review and sign. PhylaX never signs for you.</span>
+              </div>
+              <button
+                id="confirm-execute-btn"
+                onClick={handleExecute}
+                className="w-full py-3 px-4 rounded-xl bg-gradient-brand text-white text-sm font-bold hover:shadow-glow hover:scale-[1.01] transition-all duration-200 flex items-center justify-center gap-2"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                Confirm &amp; Sign Transaction
+              </button>
+            </motion.div>
+          )}
+
+          {!showExecute && execState === "idle" && (
+            <motion.div key="exec-disabled" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pt-3 border-t border-border/50">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 border border-border rounded-lg px-3 py-2.5">
+                <Lock className="w-3.5 h-3.5 flex-shrink-0" />
+                Live execution disabled
+              </div>
+            </motion.div>
+          )}
+
+          {(execState === "confirming" || execState === "building_tx") && (
+            <motion.div key="building" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 text-sm text-electric font-medium pt-3 border-t border-border/50">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              {execState === "confirming" ? "Preparing transaction…" : "Building transaction data…"}
+            </motion.div>
+          )}
+
+          {execState === "awaiting_signature" && (
+            <motion.div key="signing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 text-sm text-amber-600 font-medium pt-3 border-t border-border/50">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Waiting for wallet signature…
+            </motion.div>
+          )}
+
+          {execState === "submitted" && (
+            <motion.div key="submitted" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2 pt-3 border-t border-border/50">
+              <div className="flex items-center gap-2 text-sm text-blue-600 font-medium">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Transaction submitted. Waiting for confirmation…
+              </div>
+              {txHash && <p className="text-[10px] text-muted-foreground font-mono break-all">Tx: {txHash}</p>}
+              {explorerUrl && (
+                <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-electric hover:underline">
+                  View on Explorer <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </motion.div>
+          )}
+
+          {execState === "confirmed" && (
+            <motion.div key="confirmed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2 pt-3 border-t border-border/50">
+              <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium">
+                <CheckCircle2 className="w-4 h-4" />
+                Transaction confirmed on-chain
+              </div>
+              {txHash && <p className="text-[10px] text-muted-foreground font-mono break-all">Tx: {txHash}</p>}
+              {explorerUrl && (
+                <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-electric hover:underline">
+                  View on Explorer <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </motion.div>
+          )}
+
+          {(execState === "failed" || execState === "rejected" || execState === "wrong_chain") && (
+            <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2 pt-3 border-t border-border/50">
+              <div className="flex items-center gap-2 text-sm text-red-600 font-medium">
+                <XCircle className="w-4 h-4" />
+                {execState === "rejected" ? "Transaction rejected by wallet." : execState === "wrong_chain" ? "Wrong chain. Please switch networks." : "Transaction failed."}
+              </div>
+              {execError && (
+                <div>
+                  <button onClick={() => setShowErrorDetail((v) => !v)} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                    {showErrorDetail ? "▾ Hide detail" : "▸ Show detail"}
+                  </button>
+                  {showErrorDetail && <p className="text-xs text-red-500 mt-1 font-mono break-all">{execError}</p>}
+                </div>
+              )}
+              {txHash && <p className="text-[10px] text-muted-foreground font-mono break-all">Tx: {txHash}</p>}
+              {explorerUrl && (
+                <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-electric hover:underline">
+                  View on Explorer <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+}

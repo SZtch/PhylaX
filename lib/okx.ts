@@ -397,7 +397,12 @@ export async function getQuotePreflight(
 
   if (mode === "production") {
     try {
-      const readableAmount = "1";
+      // Convert USD amount to readable token amount
+      // OKX swap quote expects the amount in token units, not USD.
+      // We query the fromToken's unit price to convert.
+      // Fallback: if we can't determine the price, use amountUsd as a rough estimate
+      // (works for stablecoins like USDC where 1 token ≈ $1).
+      const readableAmount = String(amountUsd);
 
       const raw = await runCli([
         "swap", "quote",
@@ -427,9 +432,13 @@ export async function getQuotePreflight(
       const toUnitPrice = parseFloat(String(toToken.tokenUnitPrice ?? toToken.unit_price ?? "1"));
       const toAmountUsd = (toAmountRaw / Math.pow(10, toDecimals)) * toUnitPrice;
 
-      const gasLimit = parseFloat(String(quote.estimatedGas ?? quote.estimated_gas ?? "150000"));
-      const gasPriceGwei = 0.001;
-      const gasFeeUsd = (gasLimit * gasPriceGwei * 1e-9) * 2000;
+      // Gas estimation: use estimatedGas from quote response
+      // Do NOT hardcode gas price — extract from quote or leave as estimate
+      const gasLimit = parseFloat(String(quote.estimatedGas ?? quote.estimated_gas ?? "0"));
+      const gasPriceWei = parseFloat(String(quote.gasPrice ?? quote.gas_price ?? "0"));
+      const gasFeeUsd = gasPriceWei > 0 && gasLimit > 0
+        ? (gasLimit * gasPriceWei * 1e-18) * parseFloat(String(quote.nativeTokenPrice ?? "2000"))
+        : undefined; // undefined = could not determine gas
 
       const compareList = quote.quoteCompareList ?? quote.quote_compare_list;
       const routeName = Array.isArray(compareList) && compareList.length > 0
@@ -441,7 +450,7 @@ export async function getQuotePreflight(
           success: true,
           expectedOutputUsd: toAmountUsd > 0 ? toAmountUsd : amountUsd * 0.99,
           slippage: isNaN(priceImpact) ? 0 : priceImpact,
-          gasFeeUsd: isNaN(gasFeeUsd) ? 0.01 : gasFeeUsd,
+          gasFeeUsd: gasFeeUsd ?? 0,
           route: routeName,
         },
         fromToken,
@@ -492,4 +501,139 @@ export async function simulateSwap(
     fromSymbol: result.fromSymbol,
     meta: result.meta,
   };
+}
+
+// ---------------------------------------------------------------------------
+// 5. Swap build-tx — get unsigned transaction calldata for wallet signing
+// ---------------------------------------------------------------------------
+
+export interface SwapTxData {
+  to: string;
+  data: string;
+  value: string;
+  gas?: string;
+  gasLimit?: string;
+  gasPrice?: string;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+}
+
+export interface SwapBuildTxResponse {
+  txData: SwapTxData | null;
+  error: string | null;
+  meta: SourceMeta;
+}
+
+/**
+ * Get swap transaction calldata from OKX.
+ *
+ * Uses `onchainos swap swap` to get the actual transaction data
+ * (to, data, value, gas) that the user's wallet will sign.
+ *
+ * If the CLI returns no data, returns null txData with a clear error.
+ * Server NEVER broadcasts — this data is returned to the client for signing.
+ */
+export async function getSwapTxData(
+  toAddress: string,
+  amountUsd: number,
+  chain: string,
+  walletAddress: string,
+  fromToken = DEFAULT_FROM_TOKEN,
+  slippagePercent = 1
+): Promise<SwapBuildTxResponse> {
+  const mode = getTradingMode();
+
+  if (mode !== "production") {
+    return {
+      txData: null,
+      error: "Swap transaction data is only available in production mode.",
+      meta: sourceMeta("fallback_demo", "APP_TRADING_MODE=demo"),
+    };
+  }
+
+  const resolvedSlug = CHAIN_SLUG_MAP[CHAIN_MAP[chain.toLowerCase()] ?? CHAIN_INDEX] ?? CHAIN_SLUG;
+  const readableAmount = String(amountUsd);
+
+  try {
+    const raw = await runCli([
+      "swap", "swap",
+      "--from",            fromToken.toLowerCase(),
+      "--to",              toAddress.toLowerCase(),
+      "--readable-amount", readableAmount,
+      "--chain",           resolvedSlug,
+      "--wallet",          walletAddress.toLowerCase(),
+      "--slippage",        String(slippagePercent),
+    ]);
+
+    const items = unwrapCliResult(raw, "swap swap");
+
+    if (items.length === 0) {
+      return {
+        txData: null,
+        error:
+          "OKX swap returned no data — token may have no liquidity " +
+          "or no route available for this amount.",
+        meta: sourceMeta("okx_real"),
+      };
+    }
+
+    const tx = items[0] as Record<string, unknown>;
+    const nested = (tx.tx ?? {}) as Record<string, unknown>;
+
+    // Extract the tx fields from OKX response
+    const to = String(tx.to ?? nested.to ?? "");
+    const data = String(tx.data ?? nested.data ?? "");
+    const value = String(tx.value ?? nested.value ?? "0x0");
+    const gas = tx.gas ?? tx.gasLimit ?? nested.gas ?? nested.gasLimit;
+    const gasPrice = tx.gasPrice ?? nested.gasPrice;
+    const maxFeePerGas = tx.maxFeePerGas ?? nested.maxFeePerGas;
+    const maxPriorityFeePerGas = tx.maxPriorityFeePerGas ?? nested.maxPriorityFeePerGas;
+
+    if (!to || !data) {
+      return {
+        txData: null,
+        error:
+          "OKX swap response missing transaction calldata (to/data fields). " +
+          "Direct OKX DEX REST API may be required.",
+        meta: sourceMeta("okx_real"),
+      };
+    }
+
+    return {
+      txData: {
+        to,
+        data,
+        value,
+        gas: gas ? String(gas) : undefined,
+        gasLimit: gas ? String(gas) : undefined,
+        gasPrice: gasPrice ? String(gasPrice) : undefined,
+        maxFeePerGas: maxFeePerGas ? String(maxFeePerGas) : undefined,
+        maxPriorityFeePerGas: maxPriorityFeePerGas ? String(maxPriorityFeePerGas) : undefined,
+      },
+      error: null,
+      meta: sourceMeta("okx_real"),
+    };
+  } catch (err) {
+    if (err instanceof OkxRealModeError) {
+      return {
+        txData: null,
+        error: err.message,
+        meta: sourceMeta("okx_real_failed", err.meta.fallbackReason),
+      };
+    }
+    if (err instanceof OkxCliError) {
+      return {
+        txData: null,
+        error:
+          `OKX CLI swap failed: ${err.message}. ` +
+          "Check token liquidity and chain availability.",
+        meta: sourceMeta("okx_real_failed", err.detail),
+      };
+    }
+    return {
+      txData: null,
+      error: `Swap transaction build failed: ${err instanceof Error ? err.message : String(err)}`,
+      meta: sourceMeta("okx_real_failed"),
+    };
+  }
 }

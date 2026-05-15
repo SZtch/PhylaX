@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { PrivyProviderWrapper } from "../components/PrivyProviderWrapper";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "AegisX | Risk-gated KOL Signal Agent",
-  description: "Natural-language DeFi agent that discovers KOL token signals, filters risky assets, simulates swaps, and executes approved trades through OKX.",
+  title: "PhylaX | Risk intelligence before every on-chain trade",
+  description: "Wallet-gated chat-based natural-language on-chain trading assistant. Risk intelligence before every trade.",
 };
 
 export default function RootLayout({
@@ -16,7 +17,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <PrivyProviderWrapper>{children}</PrivyProviderWrapper>
+      </body>
     </html>
   );
 }

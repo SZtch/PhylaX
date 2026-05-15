@@ -38,31 +38,31 @@ export function About() {
       {/* huge backdrop wordmark with parallax */}
       <motion.div
         aria-hidden
-        style={{ x: wordmarkX }}
+        style={{ x: wordmarkX, willChange: "transform" }}
         className="pointer-events-none absolute inset-x-0 -bottom-[12%] flex justify-center select-none"
       >
         <span className="font-display font-bold tracking-tighter text-[22vw] leading-none text-foreground/[0.04]">
-          AEGISX
+          PHYLAX
         </span>
       </motion.div>
 
       <div className="mx-auto max-w-7xl px-6 lg:px-10 grid lg:grid-cols-2 gap-16 items-center relative">
         <div>
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-80px" }}
-            transition={{ duration: 0.7 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
           >
             <p className="text-xs uppercase tracking-[0.2em] text-electric font-medium">
               The Guard Layer
             </p>
             <h2 className="mt-4 font-display text-4xl md:text-6xl font-bold tracking-tight">
-              What is <span className="text-gradient-brand">AegisX?</span>
+              What is <span className="text-gradient-brand">PhylaX?</span>
             </h2>
             <p className="mt-6 text-muted-foreground text-lg leading-relaxed max-w-xl">
-              AegisX is the intelligence layer between you and volatile markets — combining
-              curated KOL signals with AI-driven anomaly detection to keep your capital safe.
+              PhylaX is a wallet-gated chat-based trading assistant — combining
+              natural-language on-chain trading with risk intelligence to protect your capital.
             </p>
           </motion.div>
 
@@ -70,11 +70,11 @@ export function About() {
             {points.map((p, i) => (
               <motion.li
                 key={i}
-                initial={{ opacity: 0, x: -16 }}
+                initial={{ opacity: 0, x: -12 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.08, duration: 0.5 }}
-                className="flex items-start gap-4 rounded-2xl border border-border bg-white/60 backdrop-blur p-4 hover:shadow-soft transition-shadow"
+                transition={{ delay: i * 0.07, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                className="flex items-start gap-4 rounded-2xl border border-border bg-white/60 backdrop-blur p-4 hover:shadow-soft transition-shadow duration-200"
               >
                 <span className="grid place-items-center h-10 w-10 rounded-xl bg-gradient-brand text-white shrink-0">
                   <p.icon size={18} />
@@ -86,10 +86,10 @@ export function About() {
         </div>
 
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
+          initial={{ opacity: 0, scale: 0.96 }}
           whileInView={{ opacity: 1, scale: 1 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.8 }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
           className="relative aspect-square max-w-md mx-auto w-full"
         >
           <div className="absolute inset-0 rounded-3xl bg-gradient-brand opacity-10 blur-3xl" />
@@ -116,10 +116,10 @@ export function About() {
               <circle cx="200" cy="200" r="20" fill="url(#g1)" />
               {[0, 60, 120, 180, 240, 300].map((deg, i) => {
                 const rad = (deg * Math.PI) / 180;
-                const x = 200 + Math.cos(rad) * 110;
-                const y = 200 + Math.sin(rad) * 110;
+                const cx = Number((200 + Math.cos(rad) * 110).toFixed(2));
+                const cy = Number((200 + Math.sin(rad) * 110).toFixed(2));
                 return (
-                  <circle key={i} cx={x} cy={y} r="5" fill="oklch(0.62 0.19 260)">
+                  <circle key={i} cx={cx} cy={cy} r="5" fill="oklch(0.62 0.19 260)">
                     <animate
                       attributeName="opacity"
                       values="0.3;1;0.3"

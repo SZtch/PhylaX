@@ -56,17 +56,17 @@ function FeatureCard({ f, i }: { f: Feature; i: number }) {
     <motion.div
       ref={ref}
       onMouseMove={handleMove}
-      initial={{ opacity: 0, y: 24 }}
+      initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-60px" }}
-      transition={{ delay: i * 0.08, duration: 0.6 }}
-      className={`group relative rounded-3xl border border-border bg-white p-8 overflow-hidden transition-all duration-500 hover:-translate-y-1 hover:shadow-glow ${f.span ?? ""}`}
+      transition={{ delay: i * 0.07, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      className={`group relative rounded-3xl border border-border bg-white p-8 overflow-hidden transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-glow ${f.span ?? ""}`}
       style={{
         backgroundImage: `radial-gradient(400px circle at var(--mx, 50%) var(--my, 50%), ${f.accent.replace(")", " / 0.08)")}, transparent 60%)`,
       }}
     >
       <div
-        className="absolute inset-x-0 top-0 h-px opacity-60 group-hover:opacity-100 transition-opacity"
+        className="absolute inset-x-0 top-0 h-px opacity-60 group-hover:opacity-100 transition-opacity duration-200"
         style={{ background: `linear-gradient(90deg, transparent, ${f.accent}, transparent)` }}
       />
       <span className="absolute top-5 right-5 flex h-2 w-2">
@@ -82,7 +82,7 @@ function FeatureCard({ f, i }: { f: Feature; i: number }) {
 
       <div className="relative">
         <div
-          className="inline-grid place-items-center h-12 w-12 rounded-2xl text-white shadow-soft transition-transform duration-500 group-hover:scale-110 group-hover:-translate-y-1 group-hover:rotate-3"
+          className="inline-grid place-items-center h-12 w-12 rounded-2xl text-white shadow-soft transition-transform duration-250 ease-out group-hover:scale-110 group-hover:-translate-y-1 group-hover:rotate-3"
           style={{ background: `linear-gradient(135deg, ${f.accent}, oklch(0.7 0.13 280))` }}
         >
           <f.icon size={20} />

@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { Shield, AlertTriangle, Radio, ScanLine, BarChart3, Wallet, StopCircle, Database } from "lucide-react";
-import { motion } from "framer-motion";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { PanelLeft, ChevronDown, LogOut, User } from "lucide-react";
 import { Navbar } from "../components/Navbar";
 import { Hero } from "../components/Hero";
 import { SignalDivider } from "../components/SignalDivider";
@@ -11,559 +10,253 @@ import { Features } from "../components/Features";
 import { Ecosystem } from "../components/Ecosystem";
 import { CTA } from "../components/CTA";
 import { Footer } from "../components/Footer";
-import { AppFooter } from "../components/AppFooter";
-import { ThesisInput } from "../components/ThesisInput";
-import { AgentProgress, AgentState } from "../components/AgentProgress";
-import { ParsedIntentCard } from "../components/ParsedIntentCard";
-import { TradePlanTable } from "../components/TradePlanTable";
-import { QuotePreflightPanel } from "../components/QuotePreflightPanel";
-import { ApprovalPanel } from "../components/ApprovalPanel";
-import { ResultReport } from "../components/ResultReport";
-import { OkxStatusBadge } from "../components/OkxStatusBadge";
-import { RiskPanel } from "../components/RiskPanel";
-import { WalletStatusCard } from "../components/WalletStatusCard";
-import { useWallet } from "../lib/wallet";
+import { ChatPanel } from "../components/ChatPanel";
+import { AppSidebar, type ChatSession, type SidebarView } from "../components/AppSidebar";
+import { PortfolioPanel } from "../components/PortfolioPanel";
+import { SettingsPanel } from "../components/SettingsPanel";
+import { ChainSelector } from "../components/ChainSelector";
 import { DEFAULT_CHAIN, type ChainConfig } from "../lib/chains";
-import {
-  ThesisIntent,
-  TokenSignal,
-  SimulationResult,
-  ExecutionResult,
-  SourceMeta,
-} from "../lib/schemas";
+import { usePrivyAuth } from "../components/PrivyProviderWrapper";
 
-type RiskMode = "conservative" | "moderate" | "degen";
+function createSession(): ChatSession {
+  return { id: `session-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, label: "New Chat", createdAt: Date.now() };
+}
 
-const RISK_MODES: { value: RiskMode; label: string; description: string }[] = [
-  { value: "conservative", label: "Conservative", description: "Skip unknown and high-risk tokens" },
-  { value: "moderate",     label: "Balanced",     description: "Allow unknown, block high-risk" },
-  { value: "degen",        label: "Aggressive",   description: "Allow all flagged tokens" },
-];
-
-const tradingMode = process.env.NEXT_PUBLIC_DATA_MODE === "real" || process.env.NEXT_PUBLIC_APP_TRADING_MODE === "production"
-  ? "Production"
-  : "Demo";
+const EXECUTION_MODE = process.env.NEXT_PUBLIC_ENABLE_LIVE_EXECUTION === "true" ? "Live" : "Simulation";
 
 export default function Home() {
-  // ─── Mode ───
   const [showConsole, setShowConsole] = useState(false);
-
-  // ─── Chain (single source of truth from lib/chains.ts) ───
   const [selectedChain, setSelectedChain] = useState<ChainConfig>(DEFAULT_CHAIN);
-
-  // ─── Real wallet ───
-  const wallet = useWallet(parseInt(selectedChain.chainIndex, 10));
-
-  // ─── Agent State ───
-  const [thesis, setThesis] = useState("");
-  const [riskMode, setRiskMode] = useState<RiskMode>("conservative");
-  const [state, setState] = useState<AgentState>("IDLE");
-  const [intent, setIntent] = useState<ThesisIntent | null>(null);
-  const [signals, setSignals] = useState<TokenSignal[]>([]);
-  const [quoteResult, setQuoteResult] = useState<SimulationResult | null>(null);
-  const [quoteError, setQuoteError] = useState<string | null>(null);
-  const [approvalId, setApprovalId] = useState<string | null>(null);
-  const [executionResult, setExecutionResult] = useState<ExecutionResult | null>(null);
-  const [executionError, setExecutionError] = useState<string | null>(null);
-  const [executionMessage, setExecutionMessage] = useState<string | null>(null);
-  const [fromSymbol, setFromSymbol] = useState<string>(DEFAULT_CHAIN.defaultFromSymbol);
-
-  // ─── Source metadata ───
-  const [signalMeta, setSignalMeta] = useState<SourceMeta | null>(null);
-  const [scanMeta, setScanMeta] = useState<SourceMeta | null>(null);
-  const [quoteMeta, setQuoteMeta] = useState<SourceMeta | null>(null);
-  const [integrationError, setIntegrationError] = useState<string | null>(null);
-
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileSidebar, setMobileSidebar] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [activeView, setActiveView] = useState<SidebarView>("agent");
   const consoleRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // ─── Handlers ───
-  const handleLaunch = () => {
+  const [sessions, setSessions] = useState<ChatSession[]>(() => [createSession()]);
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => sessions[0]?.id ?? "");
+
+  // Track view transitions with a key to trigger the CSS animation
+  const [viewKey, setViewKey] = useState(0);
+
+  const privy = usePrivyAuth();
+
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [userMenuOpen]);
+
+  const handleLaunch = useCallback(() => {
     setShowConsole(true);
-    setTimeout(() => {
-      consoleRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
-  };
+    setTimeout(() => consoleRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+  }, []);
+  const handleChainChange = useCallback((chain: ChainConfig) => { if (chain.enabled) setSelectedChain(chain); }, []);
+  const handleSignIn = useCallback(() => { privy.login(); }, [privy]);
+  const handleLogout = useCallback(async () => { await privy.logout(); setUserMenuOpen(false); }, [privy]);
+  const handleConnectWallet = useCallback(() => { privy.connectWallet(); setUserMenuOpen(false); }, [privy]);
+  const handleChangeView = useCallback((view: SidebarView) => {
+    setActiveView(view);
+    setMobileSidebar(false);
+    setViewKey(k => k + 1);
+  }, []);
 
-  const handleChainChange = (chain: ChainConfig) => {
-    if (!chain.enabled) return;
-    setSelectedChain(chain);
-    setFromSymbol(chain.defaultFromSymbol);
-  };
-
-  const isAgentRunning =
-    state !== "IDLE" &&
-    state !== "COMPLETED" &&
-    state !== "FAILED" &&
-    state !== "BUILDING_TRADE_PLAN";
-
-  const resetState = () => {
-    setIntent(null);
-    setSignals([]);
-    setQuoteResult(null);
-    setQuoteError(null);
-    setApprovalId(null);
-    setExecutionResult(null);
-    setExecutionError(null);
-    setExecutionMessage(null);
-    setSignalMeta(null);
-    setScanMeta(null);
-    setQuoteMeta(null);
-    setIntegrationError(null);
-    setFromSymbol(selectedChain.defaultFromSymbol);
-  };
-
-  // ─── Agent Pipeline ───
-  const runAgent = async () => {
-    try {
-      resetState();
-
-      // 1. Parse Thesis
-      setState("PARSING_THESIS");
-      const thesisRes = await fetch("/api/thesis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ thesis }),
-      });
-      if (!thesisRes.ok) throw new Error("Failed to parse thesis");
-      const { intent: parsedIntent } = await thesisRes.json();
-
-      // Chain from navbar selector is the source of truth
-      const mergedIntent: ThesisIntent = {
-        ...parsedIntent,
-        riskMode,
-        chain: selectedChain.id,
-      };
-      setIntent(mergedIntent);
-
-      // 2. Fetch Signals
-      setState("FETCHING_SIGNALS");
-      const signalsRes = await fetch("/api/signals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intent: mergedIntent }),
-      });
-
-      if (!signalsRes.ok) {
-        const errData = await signalsRes.json();
-        setIntegrationError(
-          errData.error ?? "OKX signal API unavailable. Check configuration and credentials."
-        );
-        setState("FAILED");
-        return;
+  const handleNewChat = useCallback(() => {
+    const s = createSession();
+    setSessions(prev => [s, ...prev]);
+    setActiveSessionId(s.id);
+    setActiveView("agent");
+    setViewKey(k => k + 1);
+  }, []);
+  const handleSelectSession = useCallback((id: string) => {
+    setActiveSessionId(id);
+    setActiveView("agent");
+    setViewKey(k => k + 1);
+  }, []);
+  const handleRenameSession = useCallback((id: string, label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    const short = trimmed.length > 35 ? trimmed.slice(0, 35) + "…" : trimmed;
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, label: short } : s));
+  }, []);
+  const handleDeleteSession = useCallback((id: string) => {
+    setSessions(prev => {
+      const next = prev.filter(s => s.id !== id);
+      if (next.length === 0) {
+        const fresh = createSession();
+        setActiveSessionId(fresh.id);
+        return [fresh];
       }
+      if (id === activeSessionId) setActiveSessionId(next[0].id);
+      return next;
+    });
+  }, [activeSessionId]);
 
-      const { signals: fetchedSignals, meta: sMeta } = await signalsRes.json();
-      setSignals(fetchedSignals);
-      setSignalMeta(sMeta ?? null);
+  // ─── Landing ──────────────────────────────────────────────────────────
 
-      if (!fetchedSignals || fetchedSignals.length === 0) {
-        setIntegrationError("No KOL signals found for the current chain and criteria. Try a different chain or broader thesis.");
-        setState("FAILED");
-        return;
-      }
+  if (!showConsole) {
+    return (
+      <div className="bg-background text-foreground font-sans selection:bg-electric/20 overflow-x-hidden">
+        <Navbar appMode={false} onLaunch={handleLaunch} selectedChain={selectedChain} onChainChange={handleChainChange} walletConnected={privy.authenticated && privy.hasWallet} onConnectWallet={handleSignIn} />
+        <Hero onLaunch={handleLaunch} />
+        <SignalDivider /><About /><SignalDivider /><Features /><SignalDivider /><Ecosystem />
+        <CTA onLaunch={handleLaunch} /><Footer />
+      </div>
+    );
+  }
 
-      // 3. Scan Tokens
-      setState("SCANNING_SECURITY");
-      const scannedSignals = [...fetchedSignals] as TokenSignal[];
-      let lastScanMeta: SourceMeta | null = null;
+  // ─── App shell ────────────────────────────────────────────────────────
 
-      for (let i = 0; i < scannedSignals.length; i++) {
-        const scanRes = await fetch("/api/scan", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            address: scannedSignals[i].address,
-            riskMode: mergedIntent.riskMode,
-            chain: mergedIntent.chain,
-          }),
-        });
+  const displayName = privy.userEmail ?? (privy.walletAddress ? `${privy.walletAddress.slice(0, 6)}…${privy.walletAddress.slice(-4)}` : "User");
 
-        if (scanRes.ok) {
-          const scanData = await scanRes.json();
-          scannedSignals[i].riskStatus = scanData.action;
-          if (scanData.meta) lastScanMeta = scanData.meta as SourceMeta;
-        } else {
-          const errData = await scanRes.json();
-          if (scanRes.status === 502) {
-            setIntegrationError(
-              errData.error ?? "OKX security API unavailable. Tokens cannot be verified."
-            );
-            for (let j = i; j < scannedSignals.length; j++) {
-              scannedSignals[j].riskStatus = "skipped";
-            }
-            break;
-          }
-          scannedSignals[i].riskStatus = "skipped";
-        }
-      }
-
-      setSignals(scannedSignals);
-      if (lastScanMeta) setScanMeta(lastScanMeta);
-      setState("BUILDING_TRADE_PLAN");
-    } catch (err) {
-      console.error(err);
-      setIntegrationError(err instanceof Error ? err.message : "An unexpected error occurred.");
-      setState("FAILED");
-    }
+  const sidebarProps = {
+    sessions, activeSessionId, activeView,
+    onNewChat: handleNewChat, onSelectSession: handleSelectSession,
+    onDeleteSession: handleDeleteSession, onChangeView: handleChangeView,
   };
-
-  const handleQuote = async (token: TokenSignal) => {
-    try {
-      setState("SIMULATING_SWAP");
-      setQuoteError(null);
-
-      const res = await fetch("/api/simulate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          address: token.address,
-          amountUsd: intent?.maxBudgetUsd,
-          chain: intent?.chain,
-          maxBudgetUsd: intent?.maxBudgetUsd,
-          slippageLimitPercent: intent?.slippageLimitPercent,
-          isScanned: token.riskStatus !== "pending",
-          riskLevel: token.riskStatus,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        const msg = res.status === 502
-          ? `OKX quote API unavailable: ${data.error ?? "integration error"}`
-          : data.error ?? "Quote failed due to risk guardrails.";
-        setQuoteError(msg);
-        setState("FAILED");
-        return;
-      }
-
-      setQuoteResult(data.simulation);
-      setApprovalId(data.approvalId);
-      if (data.fromSymbol) setFromSymbol(data.fromSymbol as string);
-      if (data.meta) setQuoteMeta(data.meta as SourceMeta);
-      setState("WAITING_FOR_APPROVAL");
-    } catch (err) {
-      console.error(err);
-      setQuoteError("Network error during quote request.");
-      setState("FAILED");
-    }
-  };
-
-  const handleApprove = async () => {
-    try {
-      setState("EXECUTING_SWAP");
-      setExecutionError(null);
-      setExecutionMessage(null);
-
-      const execRes = await fetch("/api/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approvalId, amountUsd: intent?.maxBudgetUsd }),
-      });
-
-      const data = await execRes.json();
-      if (!execRes.ok) {
-        setExecutionError(data.error ?? "Execution request failed.");
-        setState("FAILED");
-        return;
-      }
-
-      setExecutionResult(data.result);
-      if (data.message) setExecutionMessage(data.message as string);
-      setState("COMPLETED");
-    } catch (err) {
-      console.error(err);
-      setExecutionError("Network error during execution request.");
-      setState("FAILED");
-    }
-  };
-
-  const handleReject = () => {
-    setState("BUILDING_TRADE_PLAN");
-    setQuoteResult(null);
-    setApprovalId(null);
-  };
-
-  const activeMeta = quoteMeta ?? scanMeta ?? signalMeta;
-
-  // ─── Source label for readiness row ───
-  const sourceLabel = activeMeta
-    ? activeMeta.source === "okx_real" ? "OKX Real Data"
-    : activeMeta.source === "okx_real_failed" ? "OKX Real Failed"
-    : activeMeta.source === "fallback_demo" ? "Demo Data"
-    : activeMeta.source === "execution_disabled" ? "Execution Off"
-    : "Unknown"
-    : "—";
-
-  const sourceBadgeClass = activeMeta
-    ? activeMeta.source === "okx_real" ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-    : activeMeta.source === "okx_real_failed" ? "bg-red-50 text-red-600 border-red-200"
-    : activeMeta.source === "fallback_demo" ? "bg-amber-50 text-amber-600 border-amber-200"
-    : "bg-muted text-muted-foreground border-border"
-    : "bg-muted text-muted-foreground border-border";
 
   return (
-    <div className="bg-background text-foreground font-sans selection:bg-electric/20">
-      <Navbar
-        appMode={showConsole}
-        onLaunch={handleLaunch}
-        selectedChain={selectedChain}
-        onChainChange={handleChainChange}
-        walletConnected={wallet.connected}
-        onConnectWallet={wallet.connect}
-      />
+    <div className="h-screen flex flex-col bg-white text-foreground font-sans selection:bg-electric/20 overflow-hidden">
+      {/* ═══ NAVBAR ═══ */}
+      <header className="flex items-center justify-between px-3 sm:px-4 h-12 border-b border-border/60 bg-white shrink-0 z-50">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { if (window.innerWidth < 1024) setMobileSidebar(v => !v); else setSidebarOpen(v => !v); }}
+            className="p-2 rounded-lg text-muted-foreground hover:bg-muted/60 transition-colors duration-150"
+            aria-label="Toggle sidebar"
+          >
+            <PanelLeft className="w-[18px] h-[18px]" />
+          </button>
+          <button
+            onClick={() => { if (privy.authenticated) { setActiveView("agent"); } else { setShowConsole(false); } }}
+            className="text-base font-bold tracking-tight text-foreground hover:opacity-80 transition-opacity duration-150"
+            aria-label="Back to landing page"
+          >
+            Phyla<span className="text-gradient-brand">X</span>
+          </button>
+        </div>
 
-      {/* ─── Landing Sections ─── */}
-      {!showConsole && (
-        <>
-          <Hero onLaunch={handleLaunch} />
-          <SignalDivider />
-          <About />
-          <SignalDivider />
-          <Features />
-          <SignalDivider />
-          <Ecosystem />
-          <CTA onLaunch={handleLaunch} />
-          <Footer />
-        </>
-      )}
-
-      {/* ─── Agent Console ─── */}
-      <div 
-        ref={consoleRef}
-        className={`transition-opacity duration-1000 ${showConsole ? "opacity-100" : "opacity-0 h-0 overflow-hidden"}`}
-      >
-        <div className="bg-surface-soft noise-texture pt-24 pb-8 relative">
-          <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 relative z-10">
-            
-            {/* Console Header */}
-            <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-5 mb-6">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 bg-gradient-brand rounded-2xl flex items-center justify-center flex-shrink-0 shadow-soft">
-                  <Shield className="text-white w-5 h-5" />
-                </div>
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground tracking-tight">Agent Console</h1>
-                  <p className="text-muted-foreground text-xs sm:text-sm">Risk-gated KOL signal execution</p>
-                </div>
-              </div>
-              {activeMeta && (
-                <div className="pt-1 sm:pt-0">
-                  <OkxStatusBadge meta={activeMeta} />
-                </div>
-              )}
-            </header>
-
-            {/* ─── Readiness / Source Row ─── */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-6 text-xs">
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border font-bold ${
-                tradingMode === "Production"
-                  ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                  : "bg-amber-50 text-amber-600 border-amber-200"
-              }`}>
-                <Database className="w-3 h-3" />
-                Mode: {tradingMode}
-              </span>
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border font-bold ${sourceBadgeClass}`}>
-                Source: {sourceLabel}
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border bg-electric/10 border-electric/20 text-electric font-bold">
-                ⬡ {selectedChain.name} · {selectedChain.chainIndex}
-              </span>
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border font-bold ${
-                wallet.connected
-                  ? wallet.correctNetwork
-                    ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                    : "bg-red-50 text-red-600 border-red-200"
-                  : "bg-muted text-muted-foreground border-border"
-              }`}>
-                <Wallet className="w-3 h-3" />
-                {wallet.connected
-                  ? wallet.correctNetwork ? "Connected" : "Wrong network"
-                  : "Not connected"
-                }
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border bg-muted border-border text-muted-foreground font-bold">
-                <StopCircle className="w-3 h-3" />
-                Execution: Disabled
-              </span>
-            </div>
-
-            <div className="flex flex-col lg:flex-row gap-8">
-              {/* ─── Main Workflow ─── */}
-              <div className="flex-1 space-y-6 min-w-0 max-w-4xl">
-                
-                {/* Input Section */}
-                <div className="space-y-5">
-                  <ThesisInput
-                    value={thesis}
-                    onChange={setThesis}
-                    onSubmit={runAgent}
-                    disabled={isAgentRunning}
-                  />
-
-                  {/* Risk Mode selector */}
-                  <div className="bg-white/60 backdrop-blur border border-border p-4 rounded-2xl shadow-soft">
-                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-[0.15em] mb-2">Risk Mode</label>
-                    <div className="flex gap-2">
-                      {RISK_MODES.map((m) => (
-                        <button
-                          key={m.value}
-                          disabled={isAgentRunning}
-                          onClick={() => setRiskMode(m.value)}
-                          title={m.description}
-                          aria-label={`Set risk mode to ${m.label}: ${m.description}`}
-                          className={`flex-1 py-2 px-2 sm:px-3 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider border transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
-                            riskMode === m.value
-                              ? m.value === "conservative"
-                                ? "bg-emerald-50 border-emerald-200 text-emerald-600 shadow-sm"
-                                : m.value === "moderate"
-                                ? "bg-amber-50 border-amber-200 text-amber-600 shadow-sm"
-                                : "bg-red-50 border-red-200 text-red-600 shadow-sm"
-                              : "bg-white border-border text-muted-foreground hover:border-electric/30 hover:text-foreground shadow-sm"
-                          }`}
-                        >
-                          {m.label}
-                        </button>
-                      ))}
-                    </div>
+        <div className="flex items-center gap-2">
+          {privy.authenticated && (
+            <ChainSelector selected={selectedChain} onChange={handleChainChange} />
+          )}
+          <div className="relative" ref={userMenuRef}>
+            {privy.authenticated ? (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setUserMenuOpen(v => !v); }}
+                  className="flex items-center gap-2 rounded-full border border-border/60 bg-muted/30 px-3 py-1.5 text-sm hover:bg-muted/50 transition-colors duration-150"
+                >
+                  <div className="w-6 h-6 rounded-full bg-gradient-brand flex items-center justify-center">
+                    <User className="w-3 h-3 text-white" />
                   </div>
-                </div>
-
-                {/* Integration error banner */}
-                {integrationError && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex gap-3 bg-destructive/10 border border-destructive/20 rounded-2xl p-5 shadow-sm"
-                  >
-                    <AlertTriangle className="text-destructive w-5 h-5 flex-shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-destructive mb-1 uppercase tracking-widest">Error</p>
-                      <p className="text-sm text-destructive/80 leading-relaxed font-medium break-words">{integrationError}</p>
-                      <button
-                        onClick={() => { setState("IDLE"); setIntegrationError(null); }}
-                        className="mt-3 text-xs font-bold text-destructive/70 hover:text-destructive underline underline-offset-2"
-                      >
-                        Dismiss and try again
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* IDLE state — how it works */}
-                {state === "IDLE" && !integrationError && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                    className="bg-white/60 backdrop-blur border border-border rounded-3xl p-6 sm:p-8 shadow-soft"
-                  >
-                    <h3 className="text-lg font-display font-bold text-foreground mb-5 tracking-tight">How the Agent Works</h3>
-                    <div className="grid sm:grid-cols-3 gap-4">
-                      {[
-                        { icon: Radio, step: "1–2", title: "Discover & Parse", desc: "Parses your thesis, then fetches real KOL signals from OKX." },
-                        { icon: ScanLine, step: "3", title: "Security Scan", desc: "Each token is scanned via OKX Security for honeypots and risk flags." },
-                        { icon: BarChart3, step: "4–5", title: "Quote & Review", desc: "Safe tokens get a real OKX swap quote. You review before any action." },
-                      ].map((item) => (
-                        <div key={item.step} className="flex gap-3">
-                          <div className="shrink-0 w-10 h-10 rounded-xl bg-electric/10 grid place-items-center text-electric">
-                            <item.icon className="w-5 h-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-[10px] font-bold text-electric uppercase tracking-widest mb-0.5">Step {item.step}</p>
-                            <p className="text-sm font-bold text-foreground mb-1">{item.title}</p>
-                            <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Dynamic Main Content */}
-                {state !== "IDLE" && (
-                  <div className="space-y-6">
-                    <div className="grid sm:grid-cols-2 gap-5 items-start">
-                      <AgentProgress state={state} />
-                      <ParsedIntentCard intent={intent} />
-                    </div>
-
-                    {signals.length > 0 && (
-                      <TradePlanTable
-                        tokens={signals}
-                        chainName={selectedChain.name}
-                        onSimulate={handleQuote}
-                        fromSymbol={fromSymbol}
-                        isSimulating={
-                          state === "SIMULATING_SWAP" ||
-                          state === "WAITING_FOR_APPROVAL" ||
-                          state === "EXECUTING_SWAP"
-                        }
-                      />
-                    )}
-
-                    {/* No tokens passed risk gate */}
-                    {state === "BUILDING_TRADE_PLAN" &&
-                      signals.length > 0 &&
-                      signals.every((s) => s.riskStatus !== "safe") && (
-                        <div className="bg-amber-50 border border-amber-200 text-amber-700 rounded-2xl p-5 text-sm font-medium flex items-start gap-3">
-                          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-500" />
-                          <p>No tokens passed the risk gate for execution readiness. All discovered tokens are watchlisted or blocked.</p>
-                        </div>
-                    )}
-
-                    {(state === "SIMULATING_SWAP" || quoteResult || quoteError) && (
-                      <QuotePreflightPanel
-                        quote={quoteResult}
-                        error={quoteError}
-                        fromSymbol={fromSymbol}
-                        quoteSource={quoteMeta?.source ?? null}
-                      />
-                    )}
-
-                    {state === "WAITING_FOR_APPROVAL" && (
-                      <ApprovalPanel
-                        onApprove={handleApprove}
-                        onReject={handleReject}
-                        disabled={state !== "WAITING_FOR_APPROVAL"}
-                        walletConnected={wallet.connected}
-                        correctNetwork={wallet.correctNetwork}
-                      />
-                    )}
-
-                    {(state === "EXECUTING_SWAP" || state === "COMPLETED" || executionError) && (
-                      <ResultReport
-                        result={executionResult}
-                        error={executionError}
-                        message={executionMessage}
-                      />
+                  <span className="hidden sm:inline text-xs text-foreground/70 max-w-[140px] truncate">{displayName}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground chevron-rotate ${userMenuOpen ? "is-open" : ""}`} />
+                </button>
+                {/* Account dropdown — CSS-animated */}
+                <div className={`absolute right-0 top-full mt-2 w-64 rounded-xl bg-white border border-border shadow-soft overflow-hidden z-50 dropdown-panel ${userMenuOpen ? "is-open" : ""}`}>
+                  <div className="px-4 py-3 border-b border-border/50">
+                    {privy.userEmail && <p className="text-xs font-medium text-foreground truncate">{privy.userEmail}</p>}
+                    {privy.hasWallet && privy.walletAddress ? (
+                      <p className="text-[11px] font-mono text-muted-foreground mt-0.5">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          {privy.walletAddress.slice(0, 6)}…{privy.walletAddress.slice(-4)}
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground/60 mt-0.5">No wallet connected</p>
                     )}
                   </div>
-                )}
-              </div>
+                  <div className="py-1">
+                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors duration-120">
+                      <LogOut className="w-4 h-4" />
+                      Sign out
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <button onClick={handleSignIn} className="inline-flex items-center rounded-full bg-gradient-brand text-white px-4 py-1.5 text-sm font-medium hover:shadow-glow transition-all duration-200 hover:scale-[1.02]">
+                Sign in
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
 
-              {/* ─── Right Sidebar ─── */}
-              <div className="lg:w-80 flex-shrink-0 space-y-6">
-                <WalletStatusCard
-                  wallet={wallet}
-                  onConnectWallet={wallet.connect}
-                  onDisconnect={wallet.disconnect}
-                />
-                {state !== "IDLE" && (
-                  <RiskPanel 
-                    tokens={signals} 
-                    maxBudgetUsd={intent?.maxBudgetUsd ?? 50} 
-                    fromSymbol={fromSymbol}
-                    walletConnected={wallet.connected}
-                  />
-                )}
-              </div>
-            </div>
+      {/* ═══ BODY ═══ */}
+      <div className="flex flex-1 min-h-0" ref={consoleRef}>
+        {/* Mobile sidebar overlay */}
+        <div
+          className={`fixed inset-0 z-30 lg:hidden sidebar-mobile-overlay ${mobileSidebar ? "bg-black/20 backdrop-blur-sm pointer-events-auto" : "bg-black/0 backdrop-blur-none pointer-events-none"}`}
+          onClick={() => setMobileSidebar(false)}
+          aria-hidden={!mobileSidebar}
+        />
+        {/* Mobile sidebar drawer */}
+        <div className={`fixed top-12 bottom-0 left-0 z-40 w-[260px] bg-muted/30 backdrop-blur-xl shadow-xl lg:hidden sidebar-mobile-drawer ${mobileSidebar ? "translate-x-0" : "-translate-x-full"}`}>
+          <AppSidebar {...sidebarProps} onCollapse={() => setMobileSidebar(false)} />
+        </div>
+
+        {/* Desktop sidebar — smooth width transition */}
+        <div className={`hidden lg:block shrink-0 overflow-hidden sidebar-shell ${sidebarOpen ? "w-[260px]" : "w-0"}`}>
+          <div className="w-[260px] h-full">
+            <AppSidebar {...sidebarProps} onCollapse={() => setSidebarOpen(false)} />
           </div>
         </div>
 
-        {/* Compact app footer */}
-        <AppFooter />
+        {/* Main content — switches based on activeView with fade transition */}
+        <main className="flex-1 min-w-0 flex flex-col bg-white">
+          {activeView === "agent" && (
+            <div key={`agent-${activeSessionId}`} className="flex flex-col flex-1 min-h-0 view-enter">
+              <ChatPanel
+                key={activeSessionId}
+                isAuthenticated={privy.authenticated}
+                hasWallet={privy.hasWallet}
+                onConnectWallet={handleConnectWallet}
+                onSignIn={handleSignIn}
+                onRenameSession={(label) => handleRenameSession(activeSessionId, label)}
+                walletAddress={privy.walletAddress}
+                getAccessToken={privy.getAccessToken}
+                getIdentityToken={privy.getIdentityToken}
+              />
+            </div>
+          )}
+          {activeView === "portfolio" && (
+            <div key={`portfolio-${viewKey}`} className="flex flex-col flex-1 min-h-0 view-enter">
+              <PortfolioPanel
+                isAuthenticated={privy.authenticated}
+                hasWallet={privy.hasWallet}
+                walletAddress={privy.walletAddress}
+                chainName={selectedChain.name}
+                executionMode={EXECUTION_MODE}
+                onConnectWallet={handleConnectWallet}
+                onSignIn={handleSignIn}
+              />
+            </div>
+          )}
+          {activeView === "settings" && (
+            <div key={`settings-${viewKey}`} className="flex flex-col flex-1 min-h-0 view-enter">
+              <SettingsPanel
+                isAuthenticated={privy.authenticated}
+                hasWallet={privy.hasWallet}
+                walletAddress={privy.walletAddress}
+                userEmail={privy.userEmail}
+                chainName={selectedChain.name}
+                executionMode={EXECUTION_MODE}
+                onConnectWallet={handleConnectWallet}
+                onSignIn={handleSignIn}
+                onLogout={handleLogout}
+              />
+            </div>
+          )}
+        </main>
       </div>
     </div>
   );

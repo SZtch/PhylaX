@@ -23,6 +23,7 @@ const ALLOWED_COMMANDS = new Set([
   "token price-info",
   "security token-scan",
   "swap quote",
+  "swap swap",
 ]);
 
 export class OkxCliError extends Error {

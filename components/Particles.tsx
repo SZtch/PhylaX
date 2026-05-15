@@ -50,9 +50,11 @@ export function Particles({ count = 18, className = "", color = "oklch(0.62 0.19
             width: `${p.size}px`,
             height: `${p.size}px`,
             background: color,
-            boxShadow: `0 0 8px ${color}`,
+            boxShadow: `0 0 6px ${color}`,
             animationDelay: `${p.delay}s`,
             animationDuration: `${p.duration}s`,
+            willChange: "transform, opacity",
+            contain: "strict",
           }}
         />
       ))}

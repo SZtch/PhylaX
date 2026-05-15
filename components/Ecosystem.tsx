@@ -48,10 +48,10 @@ export function Ecosystem() {
 
         {/* Flow visualization */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.9 }}
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
           className="mt-20 relative"
         >
           {/* Desktop: horizontal flow */}
@@ -99,10 +99,10 @@ export function Ecosystem() {
               {nodes.map((n, i) => (
                 <motion.div
                   key={n.label}
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 16 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: 0.2 + i * 0.12, duration: 0.6 }}
+                  transition={{ delay: 0.15 + i * 0.1, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
                   className="flex flex-col items-center text-center group"
                 >
                   <div className="relative">
@@ -111,7 +111,7 @@ export function Ecosystem() {
                       className="absolute inset-0 rounded-2xl border border-electric/40 animate-pulse-ring"
                       style={{ animationDelay: `${i * 0.5}s` }}
                     />
-                    <div className="relative grid place-items-center h-20 w-20 rounded-2xl bg-white/5 backdrop-blur border border-white/10 shadow-glow group-hover:border-electric/60 transition-colors duration-500">
+                    <div className="relative grid place-items-center h-20 w-20 rounded-2xl bg-white/5 backdrop-blur border border-white/10 shadow-glow group-hover:border-electric/60 transition-[border-color] duration-200">
                       <n.icon size={26} className="text-cyan-soft" />
                       {/* scanning line */}
                       <span className="absolute inset-x-2 top-2 h-px bg-gradient-to-r from-transparent via-cyan-soft to-transparent animate-scan" />
@@ -129,10 +129,10 @@ export function Ecosystem() {
             {nodes.map((n, i) => (
               <motion.div
                 key={n.label}
-                initial={{ opacity: 0, x: -20 }}
+                initial={{ opacity: 0, x: -16 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.1, duration: 0.5 }}
+                transition={{ delay: i * 0.08, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                 className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-4"
               >
                 <div className="grid place-items-center h-12 w-12 rounded-xl bg-white/5 border border-white/10 shrink-0">

@@ -59,3 +59,19 @@ AGENTS.md
 
 docs/
 _Docs/
+
+# local env
+.env
+.env.local
+.env.*.local
+
+# ngrok local tooling
+ngrok.exe
+ngrok.zip
+ngrok/
+.ngrok2/
+ngrok.yml
+
+# build/deps
+.next
+node_modules

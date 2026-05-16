@@ -17,6 +17,7 @@ import type { SimulationResult } from "../lib/schemas";
 
 type ExecutionState =
   | "idle"
+  | "approving"
   | "confirming"
   | "building_tx"
   | "awaiting_signature"
@@ -41,6 +42,8 @@ interface Props {
   tokenAddress?: string;
   scanDecision?: string;
   chainConfig?: import("../lib/chains").ChainConfig;
+  needsApproval?: boolean;
+  approveTxData?: { to: string; data: string; value: string; chainId?: string; gas?: string; gasLimit?: string; gasPrice?: string; maxFeePerGas?: string; maxPriorityFeePerGas?: string; } | null;
 }
 
 interface EthereumProvider {
@@ -75,6 +78,8 @@ export function QuoteCard({
   tokenAddress,
   scanDecision,
   chainConfig,
+  needsApproval,
+  approveTxData,
 }: Props) {
   const slippageOk = quote.slippage < 3;
   const [execState, setExecState] = useState<ExecutionState>("idle");
@@ -83,6 +88,7 @@ export function QuoteCard({
   const [execError, setExecError] = useState<string | null>(null);
   const [showErrorDetail, setShowErrorDetail] = useState(false);
   const [riskAcknowledged, setRiskAcknowledged] = useState(false);
+  const [currentNeedsApproval, setCurrentNeedsApproval] = useState(!!needsApproval);
 
   // Expiry handling
   const [isExpired, setIsExpired] = useState(false);
@@ -98,6 +104,30 @@ export function QuoteCard({
 
   const handleExecute = useCallback(async () => {
     if (!approvalId || !walletAddress || isExpired || isHighRisk || walletMismatch) return;
+    
+    if (currentNeedsApproval && approveTxData) {
+      setExecState("approving");
+      setExecError(null);
+      const provider = getEthereumProvider();
+      if (!provider) {
+        setExecState("failed");
+        setExecError("No wallet provider found.");
+        return;
+      }
+      try {
+        const txParams: Record<string, string> = { from: walletAddress, to: approveTxData.to, data: approveTxData.data };
+        if (approveTxData.value) txParams.value = approveTxData.value;
+        await provider.request({ method: "eth_sendTransaction", params: [txParams] });
+        setCurrentNeedsApproval(false);
+        setExecState("idle");
+        return;
+      } catch (err: unknown) {
+        setExecState("failed");
+        setExecError((err as { message?: string })?.message || "User rejected approval.");
+        return;
+      }
+    }
+
     setExecState("confirming");
     setExecError(null);
 
@@ -307,15 +337,15 @@ export function QuoteCard({
                   <button
                     id="confirm-execute-btn"
                     onClick={handleExecute}
-                    disabled={(liveMode && !riskAcknowledged) || isExpired || isHighRisk || !!walletMismatch}
+                    disabled={(liveMode && !riskAcknowledged) || isExpired || isHighRisk || !!walletMismatch || execState !== "idle"}
                     className={`w-full py-3 px-4 rounded-xl text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
-                      (!liveMode || riskAcknowledged) && !isExpired && !isHighRisk && !walletMismatch
+                      (!liveMode || riskAcknowledged) && !isExpired && !isHighRisk && !walletMismatch && execState === "idle"
                         ? "bg-gradient-brand text-white hover:shadow-glow hover:scale-[1.01]" 
                         : "bg-muted text-muted-foreground cursor-not-allowed"
                     }`}
                   >
                     <ShieldCheck className="w-4 h-4" />
-                    Sign transaction in wallet
+                    {currentNeedsApproval ? "Approve token spending" : "Sign swap in wallet"}
                   </button>
                 </>
               ) : (
@@ -344,10 +374,10 @@ export function QuoteCard({
             </motion.div>
           )}
 
-          {(execState === "confirming" || execState === "building_tx") && (
+          {(execState === "confirming" || execState === "building_tx" || execState === "approving") && (
             <motion.div key="building" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 text-sm text-electric font-medium pt-3 border-t border-border/50">
               <Loader2 className="w-4 h-4 animate-spin" />
-              {execState === "confirming" ? "Preparing transaction…" : "Building transaction data…"}
+              {execState === "approving" ? "Awaiting approval signature…" : execState === "confirming" ? "Preparing transaction…" : "Building transaction data…"}
             </motion.div>
           )}
 

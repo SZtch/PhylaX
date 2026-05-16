@@ -200,7 +200,7 @@ console.log("\n── QuoteCard has explicit confirm button ──");
   );
 
   assert(quoteCard.includes("confirm-execute-btn"), "QuoteCard has confirm button with ID");
-  assert(quoteCard.includes("Sign transaction"), "QuoteCard has confirm text");
+  assert(quoteCard.includes("Sign swap in wallet"), "QuoteCard has confirm text");
   assert(quoteCard.includes("eth_sendTransaction"), "QuoteCard calls eth_sendTransaction");
   assert(quoteCard.includes("/api/confirm"), "QuoteCard calls /api/confirm");
   assert(quoteCard.includes("wallet will ask you to review"), "QuoteCard shows wallet signing notice");

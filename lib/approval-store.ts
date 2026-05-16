@@ -12,7 +12,9 @@ export async function createApproval(
   chain: string,
   budgetUsd: number,
   slippageLimitPercent: number,
-  walletAddress: string
+  walletAddress: string,
+  fromToken?: string,
+  routerAddress?: string
 ): Promise<string> {
   // P0 Phase 9: Reject empty/null/undefined walletAddress — required invariant
   if (!walletAddress || typeof walletAddress !== "string" || walletAddress.trim() === "") {
@@ -23,15 +25,17 @@ export async function createApproval(
   const createdAt = Date.now();
   const expiresAt = createdAt + 5 * 60 * 1000; // 5 minutes expiration
 
-  const approval: Approval & { walletAddress: string } = {
+  const approval: Approval = {
     id,
     tokenAddress,
+    fromToken: fromToken?.toLowerCase(),
     chain,
     budgetUsd,
     slippageLimitPercent,
     createdAt,
     expiresAt,
     used: false,
+    routerAddress: routerAddress?.toLowerCase(),
     walletAddress: walletAddress.toLowerCase()
   };
   

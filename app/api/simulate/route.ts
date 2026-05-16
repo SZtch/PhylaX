@@ -25,15 +25,16 @@ export async function POST(req: Request) {
   try {
     const {
       address,
-      amountUsd,
+      amount,
       chain,
-      maxBudgetUsd,
       slippageLimitPercent,
       isScanned,
       riskLevel,
+      fromToken: requestFromToken,
+      fromSymbol: requestFromSymbol
     } = await req.json();
 
-    if (!address || !amountUsd || !chain) {
+    if (!address || amount === undefined || !chain) {
       return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
     }
 
@@ -65,15 +66,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const { simulation, fromToken, fromSymbol, meta } = await simulateSwap(
+    const { simulation, fromToken, fromSymbol, fromAmountUsd, meta } = await simulateSwap(
       address,
-      amountUsd,
-      chain
+      amount,
+      chain,
+      requestFromToken,
+      requestFromSymbol
     );
 
     const guardrails = checkGuardrails(
-      amountUsd,
-      maxBudgetUsd,
+      amount,
+      amount, // We use the same for budget check, but wait...
       slippageLimitPercent,
       simulation.slippage
     );
@@ -81,9 +84,38 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: guardrails.reason }, { status: 400 });
     }
 
-    const approvalId = await createApproval(address, chain, maxBudgetUsd, slippageLimitPercent, session.walletAddress);
+    // We can fetch allowance here. We need the router address.
+    // Let's call getSwapTxData to get the router address!
+    const { getSwapTxData, checkAllowance, getApproveTxData } = await import("../../../lib/okx");
+    const swapData = await getSwapTxData(address, amount, chain, session.walletAddress, fromToken, slippageLimitPercent);
+    
+    let routerAddress: string | undefined = undefined;
+    let allowanceResult = { hasSufficient: true };
+    let approveTxData = null;
 
-    return NextResponse.json({ simulation, fromToken, fromSymbol, approvalId, meta });
+    if (swapData.txData && swapData.txData.to) {
+      routerAddress = swapData.txData.to;
+      allowanceResult = await checkAllowance(chain, session.walletAddress, fromToken, amount);
+      if (!allowanceResult.hasSufficient) {
+        const approveData = await getApproveTxData(chain, fromToken, amount);
+        approveTxData = approveData.txData;
+      }
+    } else if (swapData.error) {
+       return NextResponse.json({ error: swapData.error }, { status: 400 });
+    }
+
+    const approvalId = await createApproval(address, chain, fromAmountUsd, slippageLimitPercent, session.walletAddress, fromToken, routerAddress);
+
+    return NextResponse.json({ 
+      simulation, 
+      fromToken, 
+      fromSymbol, 
+      fromAmountUsd,
+      approvalId, 
+      meta,
+      needsApproval: !allowanceResult.hasSufficient,
+      approveTxData
+    });
   } catch (err) {
     if (err instanceof OkxRealModeError) {
       return NextResponse.json(

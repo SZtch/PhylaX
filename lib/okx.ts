@@ -267,21 +267,21 @@ export interface QuotePreflightResponse {
 
 export async function getQuotePreflight(
   toAddress: string,
-  amountUsd: number,
+  amount: number,
   chain: string,
   fromToken?: string,
   fromSymbol?: string
-): Promise<QuotePreflightResponse> {
+): Promise<QuotePreflightResponse & { fromAmountUsd: number }> {
   const chainConfig = normalizeChain(chain);
   const resolvedFromToken = fromToken || chainConfig.defaultFromToken;
   const resolvedFromSymbol = fromSymbol || chainConfig.defaultFromSymbol;
 
   if (typeof global !== "undefined" && (global as any).__mockGetQuotePreflightHandler) {
-    return (global as any).__mockGetQuotePreflightHandler(toAddress, amountUsd, chain, resolvedFromToken, resolvedFromSymbol);
+    return (global as any).__mockGetQuotePreflightHandler(toAddress, amount, chain, resolvedFromToken, resolvedFromSymbol);
   }
 
   try {
-    const readableAmount = String(amountUsd);
+    const readableAmount = String(amount);
 
     const raw = await runCli([
       "swap", "quote",
@@ -311,6 +311,10 @@ export async function getQuotePreflight(
     const toUnitPrice = parseFloat(String(toToken.tokenUnitPrice ?? toToken.unit_price ?? "1"));
     const toAmountUsd = (toAmountRaw / Math.pow(10, toDecimals)) * toUnitPrice;
 
+    const fromTokenNode = (quote.fromToken ?? quote.from_token ?? {}) as Record<string, unknown>;
+    const fromUnitPrice = parseFloat(String(fromTokenNode.tokenUnitPrice ?? fromTokenNode.unit_price ?? "1"));
+    const fromAmountUsd = amount * fromUnitPrice;
+
     const gasLimit = parseFloat(String(quote.estimatedGas ?? quote.estimated_gas ?? "0"));
     const gasPriceWei = parseFloat(String(quote.gasPrice ?? quote.gas_price ?? "0"));
     const gasFeeUsd = gasPriceWei > 0 && gasLimit > 0
@@ -325,11 +329,12 @@ export async function getQuotePreflight(
     return {
       quote: {
         success: true,
-        expectedOutputUsd: toAmountUsd > 0 ? toAmountUsd : amountUsd * 0.99,
+        expectedOutputUsd: toAmountUsd > 0 ? toAmountUsd : fromAmountUsd * 0.99,
         slippage: isNaN(priceImpact) ? 0 : priceImpact,
         gasFeeUsd: gasFeeUsd ?? 0,
         route: routeName,
       },
+      fromAmountUsd,
       fromToken: resolvedFromToken,
       fromSymbol: resolvedFromSymbol,
       toSymbol,
@@ -350,16 +355,17 @@ export async function getQuotePreflight(
 // ---------------------------------------------------------------------------
 export async function simulateSwap(
   toAddress: string,
-  amountUsd: number,
+  amount: number,
   chain: string,
   fromToken?: string,
   fromSymbol?: string
 ) {
-  const result = await getQuotePreflight(toAddress, amountUsd, chain, fromToken, fromSymbol);
+  const result = await getQuotePreflight(toAddress, amount, chain, fromToken, fromSymbol);
   return {
     simulation: result.quote,
     fromToken: result.fromToken,
     fromSymbol: result.fromSymbol,
+    fromAmountUsd: result.fromAmountUsd,
     meta: result.meta,
   };
 }
@@ -396,7 +402,7 @@ export interface SwapBuildTxResponse {
  */
 export async function getSwapTxData(
   toAddress: string,
-  amountUsd: number,
+  amount: number,
   chain: string,
   walletAddress: string,
   fromToken?: string,
@@ -406,10 +412,10 @@ export async function getSwapTxData(
   const resolvedFromToken = fromToken || chainConfig.defaultFromToken;
 
   if (typeof global !== "undefined" && (global as any).__mockGetSwapTxData) {
-    return (global as any).__mockGetSwapTxData(toAddress, amountUsd, chain, walletAddress, resolvedFromToken, slippagePercent);
+    return (global as any).__mockGetSwapTxData(toAddress, amount, chain, walletAddress, resolvedFromToken, slippagePercent);
   }
   
-  const readableAmount = String(amountUsd);
+  const readableAmount = String(amount);
 
   try {
     const raw = await runCli([
@@ -491,6 +497,116 @@ export async function getSwapTxData(
       txData: null,
       error: `Swap transaction build failed: ${err instanceof Error ? err.message : String(err)}`,
       meta: sourceMeta("okx_real_failed", chainConfig),
+    };
+  }
+}
+
+export async function checkAllowance(
+  chain: string,
+  walletAddress: string,
+  tokenAddress: string,
+  readableAmount: number,
+  decimals: number = 18
+): Promise<{ hasSufficient: boolean; allowance: string; meta: SourceMeta }> {
+  const chainConfig = normalizeChain(chain);
+  
+  if (typeof global !== "undefined" && (global as any).__mockCheckAllowance) {
+    return (global as any).__mockCheckAllowance(chain, walletAddress, tokenAddress, readableAmount);
+  }
+
+  try {
+    const raw = await runCli([
+      "swap", "check-approvals",
+      "--chain", chainConfig.chainSlug,
+      "--address", walletAddress.toLowerCase(),
+      "--token", tokenAddress.toLowerCase()
+    ]);
+    const items = unwrapCliResult(raw, "swap check-approvals");
+    if (items.length === 0) {
+      return { hasSufficient: false, allowance: "0", meta: sourceMeta("okx_real", chainConfig) };
+    }
+    const result = items[0] as Record<string, unknown>;
+    const allowance = String(result.allowance ?? "0");
+    
+    // Parse minimal units
+    // e.g. amount = 10, decimals = 6 -> 10000000
+    // Wait, javascript numbers might lose precision.
+    const needed = readableAmount * Math.pow(10, decimals);
+    const hasSufficient = parseFloat(allowance) >= needed;
+
+    return {
+      hasSufficient,
+      allowance,
+      meta: sourceMeta("okx_real", chainConfig)
+    };
+  } catch (err) {
+    return { hasSufficient: false, allowance: "0", meta: sourceMeta("okx_real_failed", chainConfig) };
+  }
+}
+
+export async function getApproveTxData(
+  chain: string,
+  tokenAddress: string,
+  readableAmount: number,
+  decimals: number = 18
+): Promise<{ txData: SwapTxData | null; error: string | null; meta: SourceMeta }> {
+  const chainConfig = normalizeChain(chain);
+  
+  if (typeof global !== "undefined" && (global as any).__mockGetApproveTxData) {
+    return (global as any).__mockGetApproveTxData(chain, tokenAddress, readableAmount);
+  }
+
+  // Convert to minimal units
+  let minimalUnits = "0";
+  if (readableAmount > 0) {
+    // using BigInt if possible, but safe integer math is ok for standard sizes
+    try {
+      // Avoid scientific notation e.g. 1e21 -> "1000000000000000000000"
+      const numStr = readableAmount.toString();
+      let parts = numStr.split('.');
+      let intPart = parts[0];
+      let decPart = parts[1] || "";
+      if (decPart.length > decimals) {
+        decPart = decPart.slice(0, decimals);
+      }
+      const paddedDecPart = decPart.padEnd(decimals, "0");
+      minimalUnits = intPart + paddedDecPart;
+    } catch {
+      minimalUnits = (readableAmount * Math.pow(10, decimals)).toLocaleString('fullwide', {useGrouping:false});
+    }
+  }
+
+  try {
+    const raw = await runCli([
+      "swap", "approve",
+      "--chain", chainConfig.chainSlug,
+      "--token", tokenAddress.toLowerCase(),
+      "--amount", minimalUnits
+    ]);
+    const items = unwrapCliResult(raw, "swap approve");
+    if (items.length === 0) {
+      return { txData: null, error: "Failed to get approve tx data", meta: sourceMeta("okx_real", chainConfig) };
+    }
+    const result = items[0] as Record<string, unknown>;
+    const tx = (result.tx ?? result) as Record<string, unknown>;
+    
+    return {
+      txData: {
+        to: String(tx.to ?? ""),
+        data: String(tx.data ?? ""),
+        value: String(tx.value ?? "0x0"),
+        gas: tx.gas ? String(tx.gas) : undefined,
+        gasLimit: tx.gasLimit ? String(tx.gasLimit) : undefined,
+        gasPrice: tx.gasPrice ? String(tx.gasPrice) : undefined,
+      },
+      error: null,
+      meta: sourceMeta("okx_real", chainConfig)
+    };
+  } catch (err) {
+    return {
+      txData: null,
+      error: `Approve transaction build failed: ${err instanceof Error ? err.message : String(err)}`,
+      meta: sourceMeta("okx_real_failed", chainConfig)
     };
   }
 }

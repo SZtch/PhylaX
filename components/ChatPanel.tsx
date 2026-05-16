@@ -22,7 +22,7 @@ import { type ChainConfig } from "../lib/chains";
 
 interface TradePlanData { type: "trade-plan"; signals: TokenSignal[]; chainName: string; source: string; }
 interface RiskResultData { type: "risk-result"; tokenSymbol: string; tokenAddress: string; riskLevel: "safe" | "high_risk" | "unknown" | "skipped" | "pending"; riskDetails?: string; source: string; }
-interface QuoteData { type: "quote"; quote: SimulationResult; fromSymbol: string; toSymbol: string; amount: number; scanDecision: string; source: string; approvalId?: string; tokenAddress?: string; targetWalletAddress?: string; }
+interface QuoteData { type: "quote"; quote: SimulationResult; fromSymbol: string; toSymbol: string; amount: number; scanDecision: string; source: string; approvalId?: string; tokenAddress?: string; targetWalletAddress?: string; needsApproval?: boolean; approveTxData?: any; }
 type PipelineData = TradePlanData | RiskResultData | QuoteData;
 interface ChatMessageWithCards extends ChatMessageData { pipelineData?: PipelineData | null; }
 
@@ -313,7 +313,7 @@ export function ChatPanel({
     switch (data.type) {
       case "trade-plan": return <TradePlanCard tokens={data.signals} chainName={data.chainName} />;
       case "risk-result": return <RiskResultCard tokenSymbol={data.tokenSymbol} tokenAddress={data.tokenAddress} riskLevel={data.riskLevel} details={data.riskDetails} />;
-      case "quote": return <QuoteCard quote={data.quote} fromSymbol={data.fromSymbol} toSymbol={data.toSymbol} approvalId={data.approvalId} showExecute={!!data.approvalId} getAccessToken={getAccessToken} getIdentityToken={getIdentityToken} walletAddress={walletAddress} targetWalletAddress={data.targetWalletAddress} onConnectWallet={onConnectWallet} amount={data.amount} tokenAddress={data.tokenAddress} scanDecision={data.scanDecision} chainConfig={selectedChain} />;
+      case "quote": return <QuoteCard quote={data.quote} fromSymbol={data.fromSymbol} toSymbol={data.toSymbol} approvalId={data.approvalId} showExecute={!!data.approvalId} getAccessToken={getAccessToken} getIdentityToken={getIdentityToken} walletAddress={walletAddress} targetWalletAddress={data.targetWalletAddress} onConnectWallet={onConnectWallet} amount={data.amount} tokenAddress={data.tokenAddress} scanDecision={data.scanDecision} chainConfig={selectedChain} needsApproval={data.needsApproval} approveTxData={data.approveTxData} />;
       default: return null;
     }
   };

@@ -1,20 +1,31 @@
-# PhylaX
+# PhylaX Trading Agent
 
-**Risk intelligence before every on-chain trade.**
+**PhylaX** is a secure, flexible, and fully agentic intent-based DeFi trading assistant built for the **Build X-Agent Hackathon**. 
 
-> Wallet-gated chat-based natural-language on-chain trading assistant powered by OKX.
+It uses the capabilities of OKX's Web3 ecosystem and XAgent skills to enable users to define high-level trading intents (e.g., "Find the best yield on X Layer" or "Swap 100 USDC to OKB") and have an AI agent autonomously plan, quote, scan for risks, and build execution-ready transactions for their wallet.
 
----
+## Build X-Agent Hackathon Integration
 
-## How It Works
+PhylaX tightly integrates OKX Web3 concepts for intelligent routing, security, and market analysis, translating these capabilities into safe execution via `lib/okx.ts`.
 
-1. **Connect Wallet** — Privy handles wallet authentication and onboarding
-2. **Chat with PhylaX** — Natural-language trading intent
-3. **Parse Intent** — Structured intent extraction with clarification
-4. **Risk Scan** — OKX Security token scan for honeypots and risk flags
-5. **Quote** — Real OKX DEX Aggregator quote with slippage and gas
-6. **Explicit Confirmation** — User reviews before proceeding
-7. **Wallet Signature** — User-confirmed wallet signature (non-custodial)
+### Runtime Integration Boundary
+To ensure deterministic execution and safety, PhylaX establishes a clear runtime boundary:
+- **Agent/Development Workflow**: XAgent skills are installed and used for agent/dev/submission workflow.
+- **Runtime PhylaX Execution**: Runtime PhylaX uses OKX Onchain/DEX integration through `lib/okx.ts` and `lib/okx-xagent-adapter.ts`. The web application does NOT blindly execute autonomous shell commands in the browser. This guarantees that all quotes, security scans, and transaction generation operations are reproducible, rate-limited, and sandboxed.
+
+### Demo Flow
+1. **User Intent**: The user asks PhylaX to execute a trade (e.g., "Swap 50 USDC for OKB on X Layer").
+2. **Agent Planning**: PhylaX parses the intent and pulls optimal quotes.
+3. **Security Scan**: Every token involved in the trade is proactively scanned for risks.
+4. **Allowance Check**: PhylaX checks current spender allowance and, if needed, generates an `Approve token spending` transaction.
+5. **Execution Prep**: The user approves the spend, and the agent generates a final, unsigned transaction payload.
+6. **User Signature**: The user securely signs the transaction using their embedded or injected wallet. PhylaX *never* signs on behalf of the user.
+
+### Production Safety Features
+- **Strict Server-Side Hard Caps**: Global `$MAX_TRADE_USD_HARD_CAP` is enforced server-side, preventing unbounded losses.
+- **Atomic Double-Scanning**: Both source (`fromToken`) and destination (`toToken`) tokens are scanned before any quote is generated.
+- **Conservative Risk Policy**: User intents are clamped to `conservative` risk modes, with honeypots unconditionally blocked.
+- **No-Broadcast Guarantee**: The `/api/execute` endpoint returns only unsigned `txData`. The client wallet is entirely responsible for broadcasting.
 
 ---
 

@@ -34,8 +34,8 @@ function runTests() {
 
   console.log("\n── Button Guardrails (QuoteCard) ──");
   // Check disabled condition
-  assert(quoteCardSource.includes("disabled={(liveMode && !riskAcknowledged) || isExpired || isHighRisk || !!walletMismatch}"), "Sign button disabled for risk limits, expiry, and mismatch");
-  assert(quoteCardSource.includes("Sign transaction in wallet"), "Button label explicitly says 'Sign transaction in wallet' (no ambiguous 'Approve')");
+  assert(quoteCardSource.includes("disabled={(liveMode && !riskAcknowledged) || isExpired || isHighRisk || !!walletMismatch || execState !== \"idle\"}"), "Sign button disabled for risk limits, expiry, and mismatch");
+  assert(quoteCardSource.includes("Sign swap in wallet"), "Button label explicitly says 'Sign swap in wallet'");
   
   // Check risk UI
   assert(quoteCardSource.includes("LOW risk by current scan"), "QuoteCard shows 'LOW risk by current scan' instead of 'Safe'");

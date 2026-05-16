@@ -116,15 +116,16 @@ registerTool({
     type: "object",
     properties: {
       to_address: { type: "string", description: "Target token contract address (0x...)" },
+      from_address: { type: "string", description: "Source token contract address (0x...), leave undefined to use default" },
       from_symbol: { type: "string", description: "Source token symbol (e.g. USDC)" },
-      amount: { type: "number", description: "Amount of from_symbol to swap" },
+      amount: { type: "number", description: "Amount of fromToken to swap" },
       chain: { type: "string", description: "Chain for the swap" },
       slippage: { type: "number", description: "Slippage tolerance in percent (e.g. 3)" },
       risk_mode: { type: "string", description: "Risk mode: conservative, moderate, degen" },
     },
     required: ["to_address", "amount", "chain"],
   },
-  execute: async (input: { to_address: string; from_symbol?: string; amount: number; chain: string, slippage?: number, risk_mode?: string }) => {
+  execute: async (input: { to_address: string; from_address?: string; from_symbol?: string; amount: number; chain: string, slippage?: number, risk_mode?: string }) => {
     let chainConfig;
     try {
       chainConfig = normalizeChain(input.chain);
@@ -134,45 +135,49 @@ registerTool({
     const chain = chainConfig.id;
     const amount = input.amount;
     const fromSymbol = input.from_symbol || chainConfig.defaultFromSymbol;
+    const fromAddress = input.from_address || chainConfig.defaultFromToken;
 
     // Enforce scan before quote
     let scanDecision: "safe" | "high_risk" | "unknown" | "skipped" = "safe";
     try {
-      const scanResult = await scanToken(input.to_address, chain);
+      const scanResultTo = await scanToken(input.to_address, chain);
+      const scanResultFrom = await scanToken(fromAddress, chain);
       
-      if (scanResult.decision === "unknown") {
+      if (scanResultTo.decision === "unknown" || scanResultFrom.decision === "unknown") {
         return {
           error: "Token safety scan unavailable. Quote blocked.",
           blocked: true
         };
       }
 
-      if (!scanResult.executionAllowed || scanResult.isHoneypot) {
+      if (!scanResultTo.executionAllowed || scanResultTo.isHoneypot || !scanResultFrom.executionAllowed || scanResultFrom.isHoneypot) {
         return {
           error: "High risk or honeypot token detected. Quote blocked for security.",
           blocked: true,
-          scanResult: {
-            riskLevel: scanResult.riskLevel,
-            triggeredLabels: scanResult.triggeredLabels,
-            meta: scanResult.meta
+          scanResultTo: {
+            riskLevel: scanResultTo.riskLevel,
+            triggeredLabels: scanResultTo.triggeredLabels,
+            meta: scanResultTo.meta
+          },
+          scanResultFrom: {
+            riskLevel: scanResultFrom.riskLevel,
+            triggeredLabels: scanResultFrom.triggeredLabels,
+            meta: scanResultFrom.meta
           }
         };
       }
 
       const riskMode = (input.risk_mode || "conservative") as "conservative" | "moderate" | "degen";
-      scanDecision = determineRiskAction(scanResult.decision, riskMode);
+      const decisionTo = determineRiskAction(scanResultTo.decision, riskMode);
+      const decisionFrom = determineRiskAction(scanResultFrom.decision, riskMode);
 
-      if (scanDecision === "skipped") {
+      if (decisionTo === "skipped" || decisionFrom === "skipped") {
         return {
           error: "Token risk exceeds current risk mode tolerance. Quote blocked.",
           blocked: true,
-          scanResult: {
-            riskLevel: scanResult.riskLevel,
-            triggeredLabels: scanResult.triggeredLabels,
-            meta: scanResult.meta
-          }
         };
       }
+      scanDecision = decisionTo === "high_risk" || decisionFrom === "high_risk" ? "high_risk" : "safe";
     } catch (err) {
       return {
         error: "Token safety scan unavailable. Quote blocked.",
@@ -180,19 +185,34 @@ registerTool({
       };
     }
 
-    const quoteResult = await getQuotePreflight(input.to_address, amount, chain, undefined, fromSymbol.toUpperCase());
-    return {
-      quote: quoteResult.quote,
-      fromSymbol: quoteResult.fromSymbol,
-      toSymbol: quoteResult.toSymbol,
-      toAddress: input.to_address,
-      amount,
-      chain,
-      slippage: input.slippage,
-      riskMode: input.risk_mode,
-      scanDecision,
-      meta: quoteResult.meta
-    };
+    try {
+      const quoteResult = await getQuotePreflight(input.to_address, amount, chain, fromAddress, fromSymbol.toUpperCase());
+      
+      const SERVER_HARD_CAP = Math.max(1, parseFloat(process.env.MAX_TRADE_USD_HARD_CAP || "100"));
+      if (quoteResult.fromAmountUsd > SERVER_HARD_CAP) {
+        return {
+          error: `Requested amount ($${quoteResult.fromAmountUsd.toFixed(2)}) exceeds server hard cap ($${SERVER_HARD_CAP}). Quote blocked.`,
+          blocked: true
+        };
+      }
+
+      return {
+        quote: quoteResult.quote,
+        fromToken: quoteResult.fromToken,
+        fromSymbol: quoteResult.fromSymbol,
+        fromAmountUsd: quoteResult.fromAmountUsd,
+        toSymbol: quoteResult.toSymbol,
+        toAddress: input.to_address,
+        amount,
+        chain,
+        slippage: input.slippage,
+        riskMode: input.risk_mode,
+        scanDecision,
+        meta: quoteResult.meta
+      };
+    } catch (err: any) {
+      return { error: err.message, blocked: true };
+    }
   },
 });
 

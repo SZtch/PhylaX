@@ -53,6 +53,8 @@ export interface Approval {
   createdAt: number;
   expiresAt: number;
   used: boolean;
+  fromToken?: string;
+  routerAddress?: string;
 }
 
 export interface SimulationResult {

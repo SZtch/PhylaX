@@ -181,7 +181,7 @@ export async function POST(req: Request) {
       spendAmountUsd,
       chainIndex,
       session.walletAddress,
-      undefined, // use default fromToken
+      approval.fromToken, // use fromToken from approval
       slippage
     );
 

@@ -20,7 +20,7 @@ const ALLOWED_COMMANDS = new Set([
   "signal list",
   "signal chains",
   "token search",
-  "token price-info",
+  "market price-info",
   "security token-scan",
   "swap quote",
   "swap swap",

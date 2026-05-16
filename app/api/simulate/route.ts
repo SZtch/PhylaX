@@ -76,7 +76,7 @@ export async function POST(req: Request) {
 
     const guardrails = checkGuardrails(
       amount,
-      amount, // We use the same for budget check, but wait...
+      fromAmountUsd,
       slippageLimitPercent,
       simulation.slippage
     );

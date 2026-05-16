@@ -107,6 +107,39 @@ export function QuoteCard({
   const isHighRisk = scanDecision && scanDecision !== "safe";
   const liveMode = process.env.NEXT_PUBLIC_ENABLE_LIVE_EXECUTION === "true";
 
+  // Switch wallet to X Layer before any signing attempt.
+  // Tries wallet_switchEthereumChain first; if chain is unknown (4902),
+  // adds it via wallet_addEthereumChain then retries.
+  const ensureXLayer = async (provider: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> }): Promise<void> => {
+    const X_LAYER_CHAIN_ID = "0xc4"; // 196 in hex
+    try {
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: X_LAYER_CHAIN_ID }],
+      });
+    } catch (switchErr: unknown) {
+      const code = (switchErr as { code?: number })?.code;
+      if (code === 4902) {
+        await provider.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: X_LAYER_CHAIN_ID,
+            chainName: "X Layer Mainnet",
+            nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+            rpcUrls: ["https://rpc.xlayer.tech"],
+            blockExplorerUrls: ["https://www.oklink.com/xlayer"],
+          }],
+        });
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: X_LAYER_CHAIN_ID }],
+        });
+      } else {
+        throw switchErr;
+      }
+    }
+  };
+
   const handleExecute = useCallback(async () => {
     if (!approvalId || !walletAddress || isExpired || isHighRisk || walletMismatch) return;
     
@@ -120,6 +153,7 @@ export function QuoteCard({
         return;
       }
       try {
+        await ensureXLayer(provider);
         const txParams: Record<string, string> = { from: walletAddress, to: approveTxData.to, data: approveTxData.data };
         if (approveTxData.value) txParams.value = approveTxData.value;
         const hash = await provider.request({ method: "eth_sendTransaction", params: [txParams] }) as string;
@@ -184,6 +218,14 @@ export function QuoteCard({
       if (!provider) {
         setExecState("failed");
         setExecError("No wallet provider found. Please install MetaMask or use Privy embedded wallet.");
+        return;
+      }
+
+      try {
+        await ensureXLayer(provider);
+      } catch {
+        setExecState("failed");
+        setExecError("Please switch your wallet to X Layer to continue.");
         return;
       }
 

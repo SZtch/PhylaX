@@ -294,6 +294,7 @@ export interface QuotePreflightResponse {
   quote: SimulationResult;
   fromToken: string;
   fromSymbol: string;
+  toSymbol: string;
   meta: SourceMeta;
 }
 
@@ -332,6 +333,7 @@ export async function getQuotePreflight(
     );
     const toAmountRaw = parseFloat(String(quote.toTokenAmount ?? quote.to_token_amount ?? "0"));
     const toToken = (quote.toToken ?? quote.to_token ?? {}) as Record<string, unknown>;
+    const toSymbol = String(toToken.tokenSymbol ?? toToken.symbol ?? "UNKNOWN");
     const toDecimals = parseInt(String(toToken.decimal ?? toToken.decimals ?? "18"), 10);
     const toUnitPrice = parseFloat(String(toToken.tokenUnitPrice ?? toToken.unit_price ?? "1"));
     const toAmountUsd = (toAmountRaw / Math.pow(10, toDecimals)) * toUnitPrice;
@@ -357,6 +359,7 @@ export async function getQuotePreflight(
       },
       fromToken,
       fromSymbol,
+      toSymbol,
       meta: sourceMeta("okx_real"),
     };
   } catch (err) {

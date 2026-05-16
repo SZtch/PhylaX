@@ -54,18 +54,21 @@ registerTool({
     properties: {
       address: { type: "string", description: "Token contract address (0x...)" },
       chain: { type: "string", description: "Chain the token is on" },
+      risk_mode: { type: "string", description: "User's risk tolerance (conservative, moderate, degen)" },
     },
     required: ["address", "chain"],
   },
-  execute: async (input: { address: string; chain: string }) => {
+  execute: async (input: { address: string; chain: string; risk_mode?: string }) => {
     const scanResult = await scanToken(input.address, input.chain);
-    const riskMode = "conservative";
+    const riskMode = (input.risk_mode || "conservative") as "conservative" | "moderate" | "degen";
     const action = determineRiskAction(scanResult.decision, riskMode);
     return {
       address: input.address,
       chain: input.chain,
       action,
       riskLevel: scanResult.riskLevel,
+      isHoneypot: scanResult.isHoneypot,
+      executionAllowed: scanResult.executionAllowed,
       triggeredLabels: scanResult.triggeredLabels,
       meta: scanResult.meta,
     };
@@ -101,10 +104,12 @@ registerTool({
       from_symbol: { type: "string", description: "Source token symbol (e.g. USDC)" },
       amount: { type: "number", description: "Amount of from_symbol to swap" },
       chain: { type: "string", description: "Chain for the swap" },
+      slippage: { type: "number", description: "Slippage tolerance in percent (e.g. 3)" },
+      risk_mode: { type: "string", description: "Risk mode: conservative, moderate, degen" },
     },
     required: ["to_address", "amount", "chain"],
   },
-  execute: async (input: { to_address: string; from_symbol?: string; amount: number; chain: string }) => {
+  execute: async (input: { to_address: string; from_symbol?: string; amount: number; chain: string, slippage?: number, risk_mode?: string }) => {
     const chain = input.chain;
     const amount = input.amount;
     const fromSymbol = input.from_symbol || "USDC";
@@ -113,7 +118,7 @@ registerTool({
     let scanDecision: "safe" | "high_risk" | "unknown" | "skipped" = "safe";
     try {
       const scanResult = await scanToken(input.to_address, chain);
-      const riskMode = "conservative";
+      const riskMode = (input.risk_mode || "conservative") as "conservative" | "moderate" | "degen";
       scanDecision = determineRiskAction(scanResult.decision, riskMode);
 
       if (scanDecision === "high_risk") {
@@ -135,9 +140,12 @@ registerTool({
     return {
       quote: quoteResult.quote,
       fromSymbol: quoteResult.fromSymbol,
+      toSymbol: quoteResult.toSymbol,
       toAddress: input.to_address,
       amount,
       chain,
+      slippage: input.slippage,
+      riskMode: input.risk_mode,
       scanDecision,
       meta: quoteResult.meta
     };

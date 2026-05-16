@@ -365,12 +365,14 @@ export async function runAgentLoop(
              };
           }
           chatState = "WAITING_FOR_CONFIRMATION";
-          const approvalId = await createApproval(String(quoteResultData.toAddress), String(quoteBlockInput!.chain), Number(quoteResultData.amount), 3, walletAddress);
+          const slippage = quoteResultData.slippage !== undefined ? Number(quoteResultData.slippage) : 2; // Default to 2% if missing
+          const approvalId = await createApproval(String(quoteResultData.toAddress), String(quoteBlockInput!.chain), Number(quoteResultData.amount), slippage, walletAddress);
           pipelineData = {
             type: "quote",
             quote: quoteResultData.quote,
             fromSymbol: quoteResultData.fromSymbol,
-            toSymbol: quoteResultData.toAddress,
+            toSymbol: quoteResultData.toSymbol || "UNKNOWN",
+            tokenAddress: quoteResultData.toAddress,
             amount: quoteResultData.amount,
             scanDecision: quoteResultData.scanDecision,
             source: (quoteResultData.meta as Record<string, unknown>)?.source,

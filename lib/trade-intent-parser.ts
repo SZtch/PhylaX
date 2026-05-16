@@ -92,13 +92,10 @@ export function parseTradeIntent(message: string): TradeIntent {
   ];
 
   const swapPatterns = [
-    /swap\s/i,
-    /trade\s/i,
-    /buy\s/i,
-    /sell\s/i,
-    /exchange\s/i,
-    /convert\s/i,
-    /execute/i,
+    /\b(swap|trade|exchange|convert)\b\s+(?:\d|\b(?:my|all)\b)/i,
+    /\bbuy\b\s+\w+\s+with/i,
+    /\bsell\b\s+(?:\d|\b(?:my|all)\b)/i,
+    /\b(swap|trade|exchange)\b\s+\w+\s+(?:to|for)\s+\w+/i,
   ];
 
   if (scanPatterns.some((p) => p.test(lower))) {
@@ -113,16 +110,22 @@ export function parseTradeIntent(message: string): TradeIntent {
   let fromToken: string | null = null;
   let toToken: string | null = null;
 
+  const STOP_WORDS = new Set(["safe", "how", "way", "best", "where", "what", "buy", "sell", "trade", "swap", "ready", "going", "need", "want", "like", "able", "is", "it", "the", "a", "an", "good", "bad", "time", "much"]);
+
   // "X to Y" / "X for Y" / "X → Y"
   const pairMatch = lower.match(
     /(\b\w+)\s+(?:to|for|→|->)\s+(\b\w+)/i
   );
   if (pairMatch) {
-    const from = TOKEN_ALIASES[pairMatch[1]] ?? pairMatch[1].toUpperCase();
-    const to = TOKEN_ALIASES[pairMatch[2]] ?? pairMatch[2].toUpperCase();
-    // Only assign if they look like token symbols (<=6 chars)
-    if (from.length <= 6) fromToken = from;
-    if (to.length <= 6) toToken = to;
+    const fromRaw = pairMatch[1].toLowerCase();
+    const toRaw = pairMatch[2].toLowerCase();
+    if (!STOP_WORDS.has(fromRaw) && !STOP_WORDS.has(toRaw)) {
+      const from = TOKEN_ALIASES[fromRaw] ?? fromRaw.toUpperCase();
+      const to = TOKEN_ALIASES[toRaw] ?? toRaw.toUpperCase();
+      // Only assign if they look like token symbols (<=8 chars)
+      if (from.length <= 8) fromToken = from;
+      if (to.length <= 8) toToken = to;
+    }
   }
 
   // ── Extract amount ──────────────────────────────────────────────────────

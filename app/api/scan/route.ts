@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { scanToken, OkxRealModeError } from "../../../lib/okx";
 import { determineRiskAction } from "../../../lib/risk-scoring";
 import { checkRateLimit } from "../../../lib/rate-limit";
+import { verifySession } from "../../../lib/privy-auth";
 
 export async function POST(req: Request) {
   const ip = req.headers.get("x-forwarded-for") || "unknown";
@@ -15,6 +16,17 @@ export async function POST(req: Request) {
 
     if (!address) {
       return NextResponse.json({ error: "Address is required" }, { status: 400 });
+    }
+
+    if (chain !== "solana" && chain !== "svm") {
+      if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+        return NextResponse.json({ error: "Invalid EVM address format" }, { status: 400 });
+      }
+    }
+
+    const auth = await verifySession(req);
+    if (!auth.authenticated || !auth.session) {
+      return NextResponse.json({ error: auth.error ?? "Please sign in to use PhylaX." }, { status: auth.statusCode || 401 });
     }
 
     const scanResult = await scanToken(address, chain ?? "x-layer");

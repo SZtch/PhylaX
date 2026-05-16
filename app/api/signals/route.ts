@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSignals, OkxRealModeError } from "../../../lib/okx";
 import { checkRateLimit } from "../../../lib/rate-limit";
+import { verifySession } from "../../../lib/privy-auth";
 import { z } from "zod";
 
 const SignalRequestSchema = z.object({
@@ -38,6 +39,11 @@ export async function POST(req: Request) {
   const parsed = SignalRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request schema", details: parsed.error.format() }, { status: 400 });
+  }
+
+  const auth = await verifySession(req);
+  if (!auth.authenticated || !auth.session) {
+    return NextResponse.json({ error: auth.error ?? "Please sign in to use PhylaX." }, { status: auth.statusCode || 401 });
   }
 
   const { chain, chainId, maxTokens } = parsed.data;

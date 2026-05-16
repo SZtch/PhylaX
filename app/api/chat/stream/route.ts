@@ -12,11 +12,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
   }
 
-  const auth = await verifySession(req);
-  if (!auth.authenticated || !auth.session) {
-    return NextResponse.json({ error: auth.error ?? "Please sign in to use PhylaX." }, { status: auth.statusCode || 401 });
-  }
-
   let body: { conversationId?: string; message?: string; chain?: string };
   try {
     body = await req.json();
@@ -28,8 +23,16 @@ export async function POST(req: Request) {
   if (!message || typeof message !== "string" || !message.trim()) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
+  if (message.length > 4000) {
+    return NextResponse.json({ error: "Message is too long. Max length is 4000 characters." }, { status: 400 });
+  }
   if (!conversationId) {
     return NextResponse.json({ error: "conversationId is required." }, { status: 400 });
+  }
+
+  const auth = await verifySession(req);
+  if (!auth.authenticated || !auth.session) {
+    return NextResponse.json({ error: auth.error ?? "Please sign in to use PhylaX." }, { status: auth.statusCode || 401 });
   }
 
   const db = getDb();

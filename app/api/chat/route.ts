@@ -3,6 +3,7 @@ import { verifySession } from "../../../lib/privy-auth";
 import { runAgentLoop } from "../../../lib/anthropic";
 import { getDb, schema } from "../../../lib/db";
 import { eq, sql, and } from "drizzle-orm";
+import { checkRateLimit } from "../../../lib/rate-limit";
 
 /**
  * POST /api/chat
@@ -11,13 +12,10 @@ import { eq, sql, and } from "drizzle-orm";
  * Uses Tool Registry + LLM Tool-Use Architecture Foundation.
  */
 export async function POST(req: Request) {
-  // ── 1. Verify user session ───────────────────
-  const auth = await verifySession(req);
-  if (!auth.authenticated || !auth.session) {
-    return NextResponse.json(
-      { error: auth.error ?? "Please sign in to use PhylaX." },
-      { status: auth.statusCode || 401 }
-    );
+  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const allowed = await checkRateLimit(`chat:${ip}`, 30, 60);
+  if (!allowed) {
+    return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
   }
 
   // ── 2. Parse request body ───────────────────────────────────────────────
@@ -32,8 +30,20 @@ export async function POST(req: Request) {
   if (!message || typeof message !== "string" || !message.trim()) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
+  if (message.length > 4000) {
+    return NextResponse.json({ error: "Message is too long. Max length is 4000 characters." }, { status: 400 });
+  }
   if (!conversationId) {
     return NextResponse.json({ error: "conversationId is required." }, { status: 400 });
+  }
+
+  // ── 1. Verify user session ───────────────────
+  const auth = await verifySession(req);
+  if (!auth.authenticated || !auth.session) {
+    return NextResponse.json(
+      { error: auth.error ?? "Please sign in to use PhylaX." },
+      { status: auth.statusCode || 401 }
+    );
   }
 
   const db = getDb();

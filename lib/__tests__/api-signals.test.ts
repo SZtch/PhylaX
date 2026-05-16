@@ -58,9 +58,9 @@ async function runTests() {
   const res4 = await POST(req4);
   assert(res4.status !== 500, "{ chain: 'xlayer' } does not throw 500");
 
-  // 5. Check if real integration failure returns 502/503
+  // 5. Check if real integration failure returns 502/503 (or 401 since auth is now required)
   // Without real OKX CLI setup, it will definitely fail.
-  assert(res3.status === 502 || res3.status === 200, "OKX real integration returns 200 or 502 (no 500)");
+  assert(res3.status === 502 || res3.status === 200 || res3.status === 401, "OKX real integration returns 200 or 502 or 401");
 
   console.log(`\n${"─".repeat(50)}`);
   console.log(`Results: ${passed} passed, ${failed} failed`);

@@ -3,8 +3,15 @@ import { simulateSwap, OkxRealModeError } from "../../../lib/okx";
 import { createApproval } from "../../../lib/approval-store";
 import { checkGuardrails } from "../../../lib/guardrails";
 import { verifyWalletSession } from "../../../lib/privy-auth";
+import { checkRateLimit } from "../../../lib/rate-limit";
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const allowed = await checkRateLimit(`simulate:${ip}`, 30, 60);
+  if (!allowed) {
+    return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
+  }
+
   // ── Wallet session enforcement ──────────────────────────────────────────
   const auth = await verifyWalletSession(req);
   if (!auth.authenticated || !auth.session) {

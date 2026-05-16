@@ -80,7 +80,7 @@ async function runTests() {
   const executeSource = fs.readFileSync(path.join(process.cwd(), "app/api/execute/route.ts"), "utf8");
   assert(executeSource.includes("riskAcknowledged"), "Execute route checks for risk acknowledgement");
   assert(executeSource.includes("wallet_mismatch"), "Execute route handles wallet mismatch");
-  assert(executeSource.includes("consumeApproval"), "Execute route uses consumeApproval (replay protection)");
+  assert(executeSource.includes("validateAndConsumeApproval"), "Execute route uses validateAndConsumeApproval (atomic replay protection)");
 
   const healthSource = fs.readFileSync(path.join(process.cwd(), "app/api/health/route.ts"), "utf8");
   assert(healthSource.includes("maxTradeUsdHardCapConfigured"), "Health route exposes configuration status cleanly");

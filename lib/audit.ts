@@ -29,7 +29,10 @@ export type AuditEvent =
   | "wallet_tx_submitted"
   | "tx_confirmed"
   | "tx_failed"
-  | "kill_switch_active";
+  | "kill_switch_active"
+  | "approval_missing"
+  | "approval_replay_blocked"
+  | "approval_expired";
 
 export interface AuditEntry {
   event: AuditEvent;

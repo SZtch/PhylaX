@@ -1,55 +1,153 @@
 import { randomUUID } from "crypto";
 import { Approval } from "./schemas";
+import { getRedis } from "./redis";
+import { isLiveExecutionEnabled } from "./risk-policy";
 
 // Simple in-memory store for demo MVP purposes
 // In production, this would be Redis or a database
-const store = new Map<string, Approval>();
+const memoryStore = new Map<string, Approval>();
 
-export function createApproval(
+export async function createApproval(
   tokenAddress: string,
   chain: string,
   budgetUsd: number,
   slippageLimitPercent: number,
   walletAddress: string
-): string {
+): Promise<string> {
   const id = randomUUID();
+  const createdAt = Date.now();
+  const expiresAt = createdAt + 5 * 60 * 1000; // 5 minutes expiration
+
   const approval: Approval & { walletAddress?: string } = {
     id,
     tokenAddress,
     chain,
     budgetUsd,
     slippageLimitPercent,
-    createdAt: Date.now(),
-    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes expiration
+    createdAt,
+    expiresAt,
     used: false,
     walletAddress: walletAddress.toLowerCase()
   };
   
-  store.set(id, approval);
+  const live = isLiveExecutionEnabled();
+  const redis = getRedis();
+
+  if (live) {
+    if (!redis) {
+      throw new Error("Redis is required for live execution approval creation.");
+    }
+    await redis.set(`phylax:approval:${id}`, JSON.stringify(approval), "EX", 5 * 60);
+  } else {
+    // Demo mode: try redis, fallback to memory
+    if (redis) {
+      try {
+        await redis.set(`phylax:approval:${id}`, JSON.stringify(approval), "EX", 5 * 60);
+      } catch {
+        memoryStore.set(id, approval);
+      }
+    } else {
+      memoryStore.set(id, approval);
+    }
+  }
+
   return id;
 }
 
-export function validateAndConsumeApproval(id: string): { valid: boolean; reason?: string; approval?: Approval } {
+export async function validateAndConsumeApproval(id: string): Promise<{ valid: boolean; reason?: string; approval?: Approval; code?: "missing" | "replay" | "expired" }> {
   if (typeof global !== "undefined" && (global as any).__mockValidateAndConsumeApproval) {
     return (global as any).__mockValidateAndConsumeApproval(id);
   }
-  const approval = store.get(id);
-  
-  if (!approval) {
-    return { valid: false, reason: "Approval ID is missing or invalid." };
+
+  const live = isLiveExecutionEnabled();
+  const redis = getRedis();
+
+  if (live && !redis) {
+    return { valid: false, reason: "Redis is required for live execution but is unavailable.", code: "missing" };
   }
 
-  if (approval.used) {
-    return { valid: false, reason: "Approval ID has already been used." };
+  let approvalData: string | null = null;
+  let missing = false;
+  let consumed = false;
+
+  if (redis) {
+    // Atomic consume using Lua script
+    // Returns data if successful, "MISSING" if not found, "CONSUMED" if already used.
+    const script = `
+      local approvalKey = KEYS[1]
+      local consumedKey = KEYS[2]
+
+      local data = redis.call("GET", approvalKey)
+      if not data then
+        return "MISSING"
+      end
+
+      local alreadyConsumed = redis.call("GET", consumedKey)
+      if alreadyConsumed then
+        return "CONSUMED"
+      end
+
+      redis.call("SET", consumedKey, "1", "EX", 86400)
+      return data
+    `;
+    
+    try {
+      const result = await redis.eval(
+        script,
+        2,
+        `phylax:approval:${id}`,
+        `phylax:approval:consumed:${id}`
+      );
+      
+      if (result === "MISSING") {
+        missing = true;
+      } else if (result === "CONSUMED") {
+        consumed = true;
+      } else if (typeof result === "string") {
+        approvalData = result;
+      }
+    } catch {
+      if (live) {
+        return { valid: false, reason: "Failed to read approval from Redis.", code: "missing" };
+      }
+      // If demo mode and redis fails, fallback below
+    }
+  }
+
+  // Fallback to memory for demo mode ONLY if not found in Redis
+  let approval: Approval | undefined;
+  
+  if (approvalData) {
+    try {
+      approval = JSON.parse(approvalData);
+    } catch {
+      return { valid: false, reason: "Failed to parse approval data.", code: "missing" };
+    }
+  } else if (!live && !missing && !consumed) {
+    approval = memoryStore.get(id);
+    if (approval) {
+      if (approval.used) {
+        consumed = true;
+      } else {
+        approval.used = true;
+        memoryStore.set(id, approval);
+      }
+    } else {
+      missing = true;
+    }
+  }
+
+  if (consumed) {
+    return { valid: false, reason: "Approval ID has already been used.", code: "replay" };
+  }
+
+  if (missing || !approval) {
+    return { valid: false, reason: "Approval ID is missing or invalid.", code: "missing" };
   }
 
   if (Date.now() > approval.expiresAt) {
-    return { valid: false, reason: "Approval ID is expired." };
+    return { valid: false, reason: "Approval ID is expired.", code: "expired" };
   }
-
-  // Consume the approval
-  approval.used = true;
-  store.set(id, approval);
 
   return { valid: true, approval };
 }

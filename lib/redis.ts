@@ -19,6 +19,9 @@ let _initAttempted = false;
 let _initError: string | null = null;
 
 export function getRedis(): Redis | null {
+  if (typeof global !== "undefined" && (global as any).__mockGetRedis !== undefined) {
+    return (global as any).__mockGetRedis();
+  }
   if (_redis) return _redis;
   if (_initAttempted) return null;
   _initAttempted = true;

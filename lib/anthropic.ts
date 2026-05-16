@@ -365,7 +365,7 @@ export async function runAgentLoop(
              };
           }
           chatState = "WAITING_FOR_CONFIRMATION";
-          const approvalId = createApproval(String(quoteResultData.toAddress), String(quoteBlockInput!.chain), Number(quoteResultData.amount), 3, walletAddress);
+          const approvalId = await createApproval(String(quoteResultData.toAddress), String(quoteBlockInput!.chain), Number(quoteResultData.amount), 3, walletAddress);
           pipelineData = {
             type: "quote",
             quote: quoteResultData.quote,

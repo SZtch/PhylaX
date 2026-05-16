@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { validateAndConsumeApproval } from "../../../lib/approval-store";
 import { verifyWalletSession } from "../../../lib/privy-auth";
 import { enforceRiskPolicy, isLiveExecutionEnabled } from "../../../lib/risk-policy";
-import { consumeApproval, isRedisAvailable } from "../../../lib/redis";
+
 import { audit } from "../../../lib/audit";
 import { checkRateLimit } from "../../../lib/rate-limit";
 
@@ -64,11 +64,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Risk acknowledgement is required for execution." }, { status: 400 });
     }
 
-    // ── 3. Validate approval (in-memory store) ───────────────────────────
-    const { valid, reason, approval } = validateAndConsumeApproval(approvalId);
+    // ── 3. Validate and atomically consume approval ───────────────────────
+    const { valid, reason, approval, code } = await validateAndConsumeApproval(approvalId);
     if (!valid || !approval) {
+      let event: import("../../../lib/audit").AuditEvent = "execution_blocked";
+      if (code === "missing") event = "approval_missing";
+      else if (code === "replay") event = "approval_replay_blocked";
+      else if (code === "expired") event = "approval_expired";
+
       await audit({
-        event: "execution_blocked",
+        event: event,
         privyUserId: session.userId,
         walletAddress: session.walletAddress,
         metadata: { reason: reason ?? "invalid_approval", approvalId },
@@ -139,23 +144,6 @@ export async function POST(req: Request) {
         { error: policy.reason },
         { status: 403 }
       );
-    }
-
-    // ── 6. Atomic approval consume via Redis (replay protection) ──────────
-    if (isRedisAvailable()) {
-      const consumed = await consumeApproval(approvalId);
-      if (!consumed) {
-        await audit({
-          event: "execution_blocked",
-          privyUserId: session.userId,
-          walletAddress: session.walletAddress,
-          metadata: { reason: "approval_replay_rejected", approvalId },
-        });
-        return NextResponse.json(
-          { error: "This approval has already been used." },
-          { status: 403 }
-        );
-      }
     }
 
     await audit({

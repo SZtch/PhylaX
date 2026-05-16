@@ -111,8 +111,20 @@ export async function POST(req: Request) {
     }
   }
 
+  // Attempt to verify wallet session for trading
+  let verifiedWalletAddress = "";
+  try {
+    const { verifyWalletSession } = await import("../../../lib/privy-auth");
+    const walletAuth = await verifyWalletSession(req);
+    if (walletAuth.authenticated && walletAuth.session) {
+      verifiedWalletAddress = walletAuth.session.walletAddress;
+    }
+  } catch (err) {
+    console.error("[api/chat] Wallet verification failed:", err);
+  }
+
   // ── 5. Run Agent Loop ───────────────────────────────────────────────────
-  const result = await runAgentLoop(message, chain, history, conversationId, undefined, auth.session!.walletAddress);
+  const result = await runAgentLoop(message, chain, history, conversationId, undefined, verifiedWalletAddress);
 
   // ── 6. Persist Assistant Message ────────────────────────────────────────
   if (db) {

@@ -26,13 +26,18 @@ import { PrivyClient } from "@privy-io/node";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface WalletSession {
+export interface BaseSession {
   /** Privy user ID (verified) */
   userId: string;
-  /** Verified wallet address (proven to be linked to Privy user) */
-  walletAddress: string;
   /** Session ID from access token */
   sessionId: string;
+  /** Client-provided wallet address, strictly unverified and not to be trusted for approvals */
+  unverifiedClientWalletAddress: string | null;
+}
+
+export interface WalletSession extends BaseSession {
+  /** Verified wallet address (proven to be linked to Privy user) */
+  walletAddress: string;
   /** All wallet addresses linked to this Privy user */
   linkedWallets: string[];
   /** How the wallet ownership was verified */
@@ -41,9 +46,16 @@ export interface WalletSession {
 
 export interface AuthResult {
   authenticated: boolean;
-  session: WalletSession | null;
+  session: BaseSession | null;
   error: string | null;
   /** HTTP status code to return */
+  statusCode: 200 | 401 | 403;
+}
+
+export interface WalletAuthResult {
+  authenticated: boolean;
+  session: WalletSession | null;
+  error: string | null;
   statusCode: 200 | 401 | 403;
 }
 
@@ -75,6 +87,12 @@ function getPrivyClient(): PrivyClient | null {
     console.error(`[privy-auth] ${_privyInitError}`);
     return null;
   }
+}
+
+/** FOR TESTING ONLY: Inject a mock PrivyClient */
+export function __setPrivyClientForTesting(client: any) {
+  _privyClient = client;
+  _privyInitError = null;
 }
 
 // ─── Token extraction ─────────────────────────────────────────────────────────
@@ -180,10 +198,8 @@ export async function verifySession(req: Request): Promise<AuthResult> {
         authenticated: true,
         session: {
           userId: claims.user_id,
-          walletAddress: clientWallet ?? "",
           sessionId: claims.session_id,
-          linkedWallets: clientWallet ? [clientWallet] : [],
-          authMethod: "identity_token",
+          unverifiedClientWalletAddress: clientWallet,
         },
         error: null,
         statusCode: 200,
@@ -211,7 +227,7 @@ export async function verifySession(req: Request): Promise<AuthResult> {
  * 3. Extract linked wallets → validate client-supplied wallet matches
  * 4. Return verified session with proven wallet address
  */
-export async function verifyWalletSession(req: Request): Promise<AuthResult> {
+export async function verifyWalletSession(req: Request): Promise<WalletAuthResult> {
   const accessToken = extractAccessToken(req);
   const identityToken = extractIdentityToken(req);
   const clientWalletAddress = req.headers.get("x-wallet-address");
@@ -268,7 +284,7 @@ async function verifyWithPrivy(
   accessToken: string,
   identityToken: string | null,
   clientWalletAddress: string
-): Promise<AuthResult> {
+): Promise<WalletAuthResult> {
   // ── Step 1: Verify access token for session ────────────────────────────
   let userId: string;
   let sessionId: string;
@@ -319,7 +335,7 @@ async function verifyWithPrivy(
     }
   } else {
     // Path B: No identity token → server API lookup
-    const lookupResult = await serverLookupWallets(client, userId);
+    const lookupResult = await serverLookupWallets(client, userId, clientWalletAddress);
     if (!lookupResult.ok) {
       return {
         authenticated: false,
@@ -358,8 +374,9 @@ async function verifyWithPrivy(
     authenticated: true,
     session: {
       userId,
-      walletAddress: clientWalletAddress.toLowerCase(),
       sessionId,
+      unverifiedClientWalletAddress: clientWalletAddress.toLowerCase(),
+      walletAddress: clientWalletAddress.toLowerCase(),
       linkedWallets,
       authMethod,
     },
@@ -435,7 +452,7 @@ async function serverLookupWallets(
 
 // ─── Error handling ───────────────────────────────────────────────────────────
 
-function handleTokenError(err: unknown, tokenType: "access" | "identity"): AuthResult {
+function handleTokenError(err: unknown, tokenType: "access" | "identity"): any {
   const message = err instanceof Error ? err.message : String(err);
 
   if (message.includes("expired") || message.includes("exp")) {

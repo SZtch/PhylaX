@@ -48,7 +48,7 @@ export async function POST(req: Request) {
       .insert(schema.conversations)
       .values({
         privyUserId: auth.session.userId,
-        walletAddress: auth.session.walletAddress || "no-wallet",
+        walletAddress: auth.session.unverifiedClientWalletAddress || "",
         title: "New Chat",
         selectedChain: chain || "x-layer",
       })

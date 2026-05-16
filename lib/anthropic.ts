@@ -5,9 +5,14 @@ import { getToolsForAnthropic, registry } from "./tools/registry";
 import { createApproval } from "./approval-store";
 import { ChatState } from "./chat-states";
 
-const anthropic = process.env.ANTHROPIC_API_KEY
+let anthropic: Anthropic | null = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
+
+/** FOR TESTING ONLY: Inject a mock Anthropic client */
+export function __setAnthropicForTesting(client: any) {
+  anthropic = client;
+}
 
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
 
@@ -350,6 +355,15 @@ export async function runAgentLoop(
             source: (scanRes?.meta as Record<string, unknown>)?.source
           };
         } else {
+          if (!walletAddress) {
+             return {
+               agentMessage: "A verified wallet is required to prepare a quote. Please connect your wallet in the settings or via the popup to continue.",
+               action: "ask_clarification",
+               chatState: "WALLET_REQUIRED",
+               pipelineData: null,
+               toolCallsLog
+             };
+          }
           chatState = "WAITING_FOR_CONFIRMATION";
           const approvalId = createApproval(String(quoteResultData.toAddress), String(quoteBlockInput!.chain), Number(quoteResultData.amount), 3, walletAddress);
           pipelineData = {

@@ -89,6 +89,17 @@ export async function POST(req: Request) {
     }
   }
 
+  let verifiedWalletAddress = "";
+  try {
+    const { verifyWalletSession } = await import("../../../../lib/privy-auth");
+    const walletAuth = await verifyWalletSession(req);
+    if (walletAuth.authenticated && walletAuth.session) {
+      verifiedWalletAddress = walletAuth.session.walletAddress;
+    }
+  } catch (err) {
+    console.error("[api/chat/stream] Wallet verification failed:", err);
+  }
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
@@ -100,7 +111,7 @@ export async function POST(req: Request) {
       try {
         const result = await runAgentLoop(message, chain, history, conversationId, (type, data) => {
           sendEvent(type, data);
-        }, auth.session!.walletAddress);
+        }, verifiedWalletAddress);
 
         if (db) {
           try {

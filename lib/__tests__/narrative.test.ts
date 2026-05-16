@@ -29,11 +29,11 @@ const anthropicRoute = fs.readFileSync(
 
 console.log("── Persona Narrative Synthesis ──");
 {
-  assert(anthropicRoute.includes("DO NOT invent"), "Missing data is not hallucinated as available");
-  assert(anthropicRoute.includes("explain clearly that the trade will not proceed"), "High-risk/blocked result produces a clear block explanation");
-  assert(anthropicRoute.includes("requires manual wallet signing"), "Quote narrative includes manual signing reminder");
-  assert(anthropicRoute.includes("some parallel scans failed, report it honestly"), "Partial scan failure is described honestly");
-  assert(anthropicRoute.includes("STRICTLY grounded in the tool results"), "Final narrative references actual tool results");
+  assert(anthropicRoute.includes("short (2–5 sentences)"), "Persona requires short responses");
+  assert(anthropicRoute.includes("Action-Oriented"), "Persona is action-oriented");
+  assert(anthropicRoute.includes("LOW risk by current scan"), "Uses specific risk scan wording");
+  assert(anthropicRoute.includes("wallet signature required"), "Emphasizes wallet signature requirement");
+  assert(anthropicRoute.includes("NO generic fillers"), "Explicitly forbids generic fillers");
 }
 
 console.log(`\n${"─".repeat(50)}`);

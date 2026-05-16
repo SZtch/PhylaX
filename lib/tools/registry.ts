@@ -145,7 +145,7 @@ registerTool({
 
     if (chainConfig.id !== "x-layer") {
       return {
-        error: "Live execution is currently available on X Layer only. Base/BSC/Solana support is Coming Soon.",
+        error: `Execution for ${chainConfig.name} is Coming Soon. Switch to X Layer to proceed.`,
         blocked: true
       };
     }
@@ -165,7 +165,7 @@ registerTool({
     const balanceCheck = await checkBalance(chain, context.walletAddress, fromAddress, amount);
     if (!balanceCheck.hasSufficient) {
       return {
-        error: `Insufficient balance. Verified wallet has ${balanceCheck.balance} ${fromSymbol}, but ${amount} is required. Quote and execution blocked.`,
+        error: `Insufficient balance: verified wallet has ${balanceCheck.balance} ${fromSymbol}. Reduce amount or top up.`,
         blocked: true
       };
     }
@@ -178,7 +178,7 @@ registerTool({
       
       if (scanResultTo.decision === "unknown" || scanResultFrom.decision === "unknown") {
         return {
-          error: "Token safety scan unavailable. Quote blocked.",
+          error: "Token safety scan unavailable. Quote blocked for security.",
           blocked: true
         };
       }
@@ -213,7 +213,7 @@ registerTool({
       scanDecision = decisionTo === "high_risk" || decisionFrom === "high_risk" ? "high_risk" : "safe";
     } catch (err) {
       return {
-        error: "Token safety scan unavailable. Quote blocked.",
+        error: "Token safety scan unavailable. Quote blocked for security.",
         blocked: true
       };
     }

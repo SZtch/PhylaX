@@ -25,7 +25,8 @@ type ExecutionState =
   | "confirmed"
   | "failed"
   | "rejected"
-  | "wrong_chain";
+  | "wrong_chain"
+  | "expired";
 
 interface Props {
   quote: SimulationResult;
@@ -95,7 +96,10 @@ export function QuoteCard({
   const [isExpired, setIsExpired] = useState(false);
   useState(() => {
     // 5 minutes expiry
-    const timer = setTimeout(() => setIsExpired(true), 5 * 60 * 1000);
+    const timer = setTimeout(() => {
+      setIsExpired(true);
+      setExecState("expired");
+    }, 5 * 60 * 1000);
     return () => clearTimeout(timer);
   });
 
@@ -332,24 +336,35 @@ export function QuoteCard({
                         onChange={(e) => setRiskAcknowledged(e.target.checked)}
                       />
                       <span>
-                        I acknowledge that PhylaX is not financial advice, signals are not proof of safety, on-chain trades can lose funds, and PhylaX cannot recover losses. I accept all risks.
+                        I acknowledge the risks of on-chain trading and accept that PhylaX is not responsible for any losses.
                       </span>
                     </label>
                   ) : null}
 
-                  <button
-                    id="confirm-execute-btn"
-                    onClick={handleExecute}
-                    disabled={(liveMode && !riskAcknowledged) || isExpired || isHighRisk || !!walletMismatch || execState !== "idle"}
-                    className={`w-full py-3 px-4 rounded-xl text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
-                      (!liveMode || riskAcknowledged) && !isExpired && !isHighRisk && !walletMismatch && execState === "idle"
-                        ? "bg-gradient-brand text-white hover:shadow-glow hover:scale-[1.01]" 
-                        : "bg-muted text-muted-foreground cursor-not-allowed"
-                    }`}
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    {currentNeedsApproval ? "Approve token spending" : "Sign swap in wallet"}
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      id="confirm-execute-btn"
+                      onClick={handleExecute}
+                      disabled={(liveMode && !riskAcknowledged) || isExpired || isHighRisk || !!walletMismatch || execState !== "idle"}
+                      className={`w-full py-3 px-4 rounded-xl text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
+                        (!liveMode || riskAcknowledged) && !isExpired && !isHighRisk && !walletMismatch && execState === "idle"
+                          ? "bg-gradient-brand text-white hover:shadow-glow hover:scale-[1.01]" 
+                          : "bg-muted text-muted-foreground cursor-not-allowed"
+                      }`}
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      {currentNeedsApproval ? "Approve USDC spending" : "Sign swap in wallet"}
+                    </button>
+                    
+                    {walletMismatch && (
+                      <button
+                        onClick={onConnectWallet}
+                        className="w-full py-2 px-4 rounded-xl border border-red-200 text-red-600 text-[11px] font-bold hover:bg-red-50 transition-all flex items-center justify-center gap-2"
+                      >
+                        Switch to {targetWalletAddress?.slice(0,6)}...
+                      </button>
+                    )}
+                  </div>
                 </>
               ) : (
                 <>
@@ -372,7 +387,7 @@ export function QuoteCard({
             <motion.div key="exec-disabled" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pt-3 border-t border-border/50">
               <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 border border-border rounded-lg px-3 py-2.5">
                 <Lock className="w-3.5 h-3.5 flex-shrink-0" />
-                Live execution disabled
+                Live execution disabled on {chainConfig?.name || "this chain"}
               </div>
             </motion.div>
           )}
@@ -385,61 +400,106 @@ export function QuoteCard({
           )}
 
           {execState === "awaiting_signature" && (
-            <motion.div key="signing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 text-sm text-amber-600 font-medium pt-3 border-t border-border/50">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Waiting for wallet signature…
+            <motion.div key="signing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-3 pt-3 border-t border-border/50">
+              <div className="flex items-center gap-2 text-sm text-amber-600 font-medium">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Waiting for wallet signature…
+              </div>
+              <button 
+                onClick={() => setExecState("idle")}
+                className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+              >
+                Cancel and return
+              </button>
             </motion.div>
           )}
 
           {execState === "submitted" && (
-            <motion.div key="submitted" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2 pt-3 border-t border-border/50">
+            <motion.div key="submitted" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3 pt-3 border-t border-border/50">
               <div className="flex items-center gap-2 text-sm text-blue-600 font-medium">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Transaction submitted. Waiting for confirmation…
+                Transaction submitted…
               </div>
-              {txHash && <p className="text-[10px] text-muted-foreground font-mono break-all">Tx: {txHash}</p>}
-              {explorerUrl && (
-                <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-electric hover:underline">
-                  View on Explorer <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
+              <div className="flex flex-wrap gap-2">
+                {explorerUrl && (
+                  <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="flex-1 py-2 px-3 bg-muted hover:bg-muted/60 rounded-lg text-[11px] font-bold text-foreground flex items-center justify-center gap-2 transition-colors">
+                    View on Explorer <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                <button 
+                  onClick={() => setExecState("idle")}
+                  className="flex-1 py-2 px-3 border border-border rounded-lg text-[11px] font-bold text-muted-foreground hover:bg-muted/20 flex items-center justify-center transition-colors"
+                >
+                  Check status
+                </button>
+              </div>
             </motion.div>
           )}
 
           {execState === "confirmed" && (
-            <motion.div key="confirmed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2 pt-3 border-t border-border/50">
+            <motion.div key="confirmed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3 pt-3 border-t border-border/50">
               <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium">
                 <CheckCircle2 className="w-4 h-4" />
-                Transaction confirmed on-chain
+                Success: Transaction confirmed
               </div>
-              {txHash && <p className="text-[10px] text-muted-foreground font-mono break-all">Tx: {txHash}</p>}
-              {explorerUrl && (
-                <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-electric hover:underline">
-                  View on Explorer <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
+              <div className="flex flex-wrap gap-2">
+                {explorerUrl && (
+                  <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="flex-1 py-2 px-3 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-[11px] font-bold flex items-center justify-center gap-2 transition-colors">
+                    View on Explorer <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="flex-1 py-2 px-3 bg-electric text-white rounded-lg text-[11px] font-bold hover:shadow-glow flex items-center justify-center transition-all"
+                >
+                  New trade
+                </button>
+              </div>
             </motion.div>
           )}
 
-          {(execState === "failed" || execState === "rejected" || execState === "wrong_chain") && (
-            <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2 pt-3 border-t border-border/50">
+          {(execState === "failed" || execState === "rejected" || execState === "wrong_chain" || execState === "expired") && (
+            <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3 pt-3 border-t border-border/50">
               <div className="flex items-center gap-2 text-sm text-red-600 font-medium">
                 <XCircle className="w-4 h-4" />
-                {execState === "rejected" ? "Transaction rejected by wallet." : execState === "wrong_chain" ? "Wrong chain. Please switch networks." : "Transaction failed."}
+                {execState === "rejected" ? "Rejected by wallet" : execState === "wrong_chain" ? "Switch to X Layer" : execState === "expired" ? "Quote expired" : "Execution failed"}
               </div>
-              {execError && (
-                <div>
-                  <button onClick={() => setShowErrorDetail((v) => !v)} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
-                    {showErrorDetail ? "▾ Hide detail" : "▸ Show detail"}
+              
+              <div className="flex flex-col gap-2">
+                <button 
+                  onClick={() => {
+                    setExecState("idle");
+                    setIsExpired(false);
+                    // In a real app we'd trigger a re-quote here
+                  }}
+                  className="w-full py-2.5 px-4 bg-electric text-white rounded-xl text-xs font-bold hover:shadow-glow transition-all flex items-center justify-center gap-2"
+                >
+                  Refresh quote
+                </button>
+                
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => window.location.reload()}
+                    className="flex-1 py-2 px-3 border border-border rounded-lg text-[11px] font-bold text-muted-foreground hover:bg-muted/20 flex items-center justify-center"
+                  >
+                    Scan another token
                   </button>
-                  {showErrorDetail && <p className="text-xs text-red-500 mt-1 font-mono break-all">{execError}</p>}
+                  <button 
+                    onClick={() => setExecState("idle")}
+                    className="flex-1 py-2 px-3 border border-border rounded-lg text-[11px] font-bold text-muted-foreground hover:bg-muted/20 flex items-center justify-center"
+                  >
+                    Change amount
+                  </button>
                 </div>
-              )}
-              {txHash && <p className="text-[10px] text-muted-foreground font-mono break-all">Tx: {txHash}</p>}
-              {explorerUrl && (
-                <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-electric hover:underline">
-                  View on Explorer <ExternalLink className="w-3 h-3" />
-                </a>
+              </div>
+
+              {execError && (
+                <div className="mt-2">
+                  <button onClick={() => setShowErrorDetail((v) => !v)} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                    {showErrorDetail ? "▾ Hide error detail" : "▸ Show error detail"}
+                  </button>
+                  {showErrorDetail && <p className="text-xs text-red-500 mt-1 font-mono break-all bg-red-50 p-2 rounded border border-red-100">{execError}</p>}
+                </div>
               )}
             </motion.div>
           )}

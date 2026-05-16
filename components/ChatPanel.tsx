@@ -184,8 +184,8 @@ export function ChatPanel({
           return [...prev, {
             id: `system-welcome-${Date.now()}`,
             role: "assistant",
-            content: `Welcome to PhylaX. I can scan tokens, build swap quotes, and help you find opportunities on ${selectedChain.name}.` +
-              (hasWallet ? "\n\nEvery trade requires your explicit wallet signature." : "\n\nConnect a wallet when you're ready to sign transactions."),
+            content: `PhylaX is ready on ${selectedChain.name}.
+I can scan tokens, search for signals, and prepare quotes. Every trade requires your wallet signature.`,
             timestamp: Date.now(),
           }];
         });
@@ -369,11 +369,11 @@ export function ChatPanel({
                 <div className="w-14 h-14 rounded-2xl bg-gradient-brand flex items-center justify-center mx-auto mb-5 shadow-soft">
                   <Shield className="w-7 h-7 text-white" />
                 </div>
-                <h2 className="text-2xl font-display font-bold text-foreground mb-2">
-                  How can I help you trade?
+                <h2 className="text-xl font-display font-bold text-foreground mb-2">
+                  Trade secure on X Layer
                 </h2>
-                <p className="text-sm text-muted-foreground">
-                  Sign in to start scanning tokens, building quotes, and trading on X Layer.
+                <p className="text-[13px] text-muted-foreground">
+                  Scan tokens and build quotes with risk-first protection.
                 </p>
               </div>
             </EmptyStateWrapper>

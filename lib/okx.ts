@@ -194,6 +194,10 @@ export async function scanToken(
 ): Promise<ScanResponse> {
   const chainConfig = normalizeChain(chain);
 
+  if (typeof global !== "undefined" && (global as any).__mockScanTokenHandler) {
+    return (global as any).__mockScanTokenHandler(address, chain);
+  }
+
   try {
     const raw = await runCli([
       "security", "token-scan",
@@ -229,11 +233,12 @@ export async function scanToken(
       .filter(([f]) => result[f] === true)
       .map(([, label]) => label);
 
-    const isHighOrCritical = riskLevel === "CRITICAL" || riskLevel === "HIGH";
+    // P0 Phase 9: Only LOW is safe. MEDIUM/HIGH/CRITICAL all block execution.
+    const isBlocked = riskLevel !== "LOW";
     return {
       riskLevel,
-      decision: isHighOrCritical ? "high_risk" : "safe",
-      executionAllowed: !isHighOrCritical,
+      decision: isBlocked ? "high_risk" : "safe",
+      executionAllowed: !isBlocked,
       isScanned: true,
       isHoneypot,
       triggeredLabels,

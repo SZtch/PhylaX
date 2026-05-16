@@ -37,7 +37,7 @@ export function RiskPanel({ tokens, maxBudgetUsd, fromSymbol, walletConnected }:
             <div className="text-lg font-bold text-foreground">{total}</div>
           </div>
           <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 shadow-sm">
-            <div className="text-emerald-600 text-[10px] mb-1 font-bold uppercase tracking-wider">Safe</div>
+            <div className="text-emerald-600 text-[10px] mb-1 font-bold uppercase tracking-wider">LOW Risk</div>
             <div className="text-lg font-bold text-emerald-600">{safe}</div>
           </div>
           <div className="bg-amber-50 p-3 rounded-xl border border-amber-100 shadow-sm">

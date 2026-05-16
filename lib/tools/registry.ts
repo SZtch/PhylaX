@@ -139,12 +139,17 @@ registerTool({
     let scanDecision: "safe" | "high_risk" | "unknown" | "skipped" = "safe";
     try {
       const scanResult = await scanToken(input.to_address, chain);
-      const riskMode = (input.risk_mode || "conservative") as "conservative" | "moderate" | "degen";
-      scanDecision = determineRiskAction(scanResult.decision, riskMode);
-
-      if (scanDecision === "high_risk") {
+      
+      if (scanResult.decision === "unknown") {
         return {
-          error: "High risk token detected. Quote blocked for security.",
+          error: "Token safety scan unavailable. Quote blocked.",
+          blocked: true
+        };
+      }
+
+      if (!scanResult.executionAllowed || scanResult.isHoneypot) {
+        return {
+          error: "High risk or honeypot token detected. Quote blocked for security.",
           blocked: true,
           scanResult: {
             riskLevel: scanResult.riskLevel,
@@ -153,8 +158,26 @@ registerTool({
           }
         };
       }
-    } catch {
-      scanDecision = "skipped";
+
+      const riskMode = (input.risk_mode || "conservative") as "conservative" | "moderate" | "degen";
+      scanDecision = determineRiskAction(scanResult.decision, riskMode);
+
+      if (scanDecision === "skipped") {
+        return {
+          error: "Token risk exceeds current risk mode tolerance. Quote blocked.",
+          blocked: true,
+          scanResult: {
+            riskLevel: scanResult.riskLevel,
+            triggeredLabels: scanResult.triggeredLabels,
+            meta: scanResult.meta
+          }
+        };
+      }
+    } catch (err) {
+      return {
+        error: "Token safety scan unavailable. Quote blocked.",
+        blocked: true
+      };
     }
 
     const quoteResult = await getQuotePreflight(input.to_address, amount, chain, undefined, fromSymbol.toUpperCase());

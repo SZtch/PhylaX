@@ -35,7 +35,12 @@ interface Props {
   getAccessToken?: () => Promise<string | null>;
   getIdentityToken?: () => Promise<string | null>;
   walletAddress?: string | null;
+  targetWalletAddress?: string | null;
   onConnectWallet?: () => void;
+  amount?: number;
+  tokenAddress?: string;
+  scanDecision?: string;
+  chainConfig?: import("../lib/chains").ChainConfig;
 }
 
 interface EthereumProvider {
@@ -64,7 +69,12 @@ export function QuoteCard({
   getAccessToken,
   getIdentityToken,
   walletAddress,
+  targetWalletAddress,
   onConnectWallet,
+  amount,
+  tokenAddress,
+  scanDecision,
+  chainConfig,
 }: Props) {
   const slippageOk = quote.slippage < 3;
   const [execState, setExecState] = useState<ExecutionState>("idle");
@@ -74,8 +84,20 @@ export function QuoteCard({
   const [showErrorDetail, setShowErrorDetail] = useState(false);
   const [riskAcknowledged, setRiskAcknowledged] = useState(false);
 
+  // Expiry handling
+  const [isExpired, setIsExpired] = useState(false);
+  useState(() => {
+    // 5 minutes expiry
+    const timer = setTimeout(() => setIsExpired(true), 5 * 60 * 1000);
+    return () => clearTimeout(timer);
+  });
+
+  const walletMismatch = targetWalletAddress && walletAddress && targetWalletAddress.toLowerCase() !== walletAddress.toLowerCase();
+  const isHighRisk = scanDecision && scanDecision !== "safe";
+  const liveMode = process.env.NEXT_PUBLIC_ENABLE_LIVE_EXECUTION === "true";
+
   const handleExecute = useCallback(async () => {
-    if (!approvalId || !walletAddress) return;
+    if (!approvalId || !walletAddress || isExpired || isHighRisk || walletMismatch) return;
     setExecState("confirming");
     setExecError(null);
 
@@ -165,7 +187,7 @@ export function QuoteCard({
       setExecState("failed");
       setExecError(`Execution error: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [approvalId, walletAddress, getAccessToken, getIdentityToken, quote, riskAcknowledged]);
+  }, [approvalId, walletAddress, getAccessToken, getIdentityToken, quote, riskAcknowledged, isExpired, isHighRisk, walletMismatch]);
 
   return (
     <motion.div
@@ -203,8 +225,40 @@ export function QuoteCard({
         </div>
 
         {/* Route info */}
-        <div className="text-[10px] text-muted-foreground bg-muted/40 rounded-lg px-3 py-2 font-mono">
-          Route: {quote.route}
+        <div className="text-[10px] text-muted-foreground bg-muted/40 rounded-lg px-3 py-2 font-mono break-all">
+          <p>Amount: {amount ? `$${amount}` : "Unknown"} {fromSymbol}</p>
+          <p>Token: {tokenAddress || "Unknown"}</p>
+          <p>Router: {quote.route}</p>
+        </div>
+
+        {/* Chain & Security info */}
+        <div className="space-y-1.5 text-xs">
+          {chainConfig ? (
+            <div className="flex items-center gap-2 bg-muted/20 border border-border/50 rounded-lg px-3 py-2 text-muted-foreground">
+              <span className="font-semibold">{chainConfig.name}</span>
+              <span>(ID: {chainConfig.id})</span>
+            </div>
+          ) : null}
+
+          {scanDecision === "safe" ? (
+            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 text-emerald-700">
+              <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
+              LOW risk by current scan
+            </div>
+          ) : scanDecision ? (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-700 font-semibold">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+              BLOCKED: {scanDecision === "high_risk" ? "MEDIUM/HIGH risk detected" : "Unknown risk state"}
+            </div>
+          ) : null}
+
+          {walletAddress && targetWalletAddress && (
+            <div className={`flex items-center gap-2 border rounded-lg px-3 py-2 ${walletMismatch ? "bg-red-50 border-red-200 text-red-700 font-semibold" : "bg-muted/20 border-border/50 text-muted-foreground"}`}>
+              <Lock className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Verified Wallet: {targetWalletAddress.slice(0,6)}...{targetWalletAddress.slice(-4)}</span>
+              {walletMismatch && <span className="ml-auto">Mismatch! Connect correct wallet.</span>}
+            </div>
+          )}
         </div>
 
         {/* Slippage warning */}
@@ -212,6 +266,13 @@ export function QuoteCard({
           <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
             High slippage detected. Review carefully before confirming.
+          </div>
+        )}
+
+        {isExpired && (
+          <div className="flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <XCircle className="w-3.5 h-3.5 flex-shrink-0" />
+            Quote expired, request a new quote.
           </div>
         )}
 
@@ -225,34 +286,36 @@ export function QuoteCard({
                     <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 text-blue-500 mt-0.5" />
                     <div>
                       <p className="font-semibold text-blue-800 mb-0.5">User-Signed Execution (Demo Hard Cap Applies)</p>
-                      <p>Your wallet will ask you to review and sign. PhylaX never signs for you. Use small test amounts ($1-$5) for initial verification.</p>
+                      <p>Your wallet will ask you to review and sign. PhylaX never signs for you.</p>
                     </div>
                   </div>
                   
-                  <label className="flex items-start gap-2 text-[11px] text-muted-foreground cursor-pointer bg-muted/20 p-2 rounded-lg border border-border/50 hover:bg-muted/40 transition-colors">
-                    <input 
-                      type="checkbox" 
-                      className="mt-0.5 rounded border-gray-300 text-electric focus:ring-electric"
-                      checked={riskAcknowledged}
-                      onChange={(e) => setRiskAcknowledged(e.target.checked)}
-                    />
-                    <span>
-                      I acknowledge that PhylaX is not financial advice, signals are not proof of safety, on-chain trades can lose funds, and PhylaX cannot recover losses. I accept all risks.
-                    </span>
-                  </label>
+                  {liveMode ? (
+                    <label className="flex items-start gap-2 text-[11px] text-muted-foreground cursor-pointer bg-muted/20 p-2 rounded-lg border border-border/50 hover:bg-muted/40 transition-colors">
+                      <input 
+                        type="checkbox" 
+                        className="mt-0.5 rounded border-gray-300 text-electric focus:ring-electric"
+                        checked={riskAcknowledged}
+                        onChange={(e) => setRiskAcknowledged(e.target.checked)}
+                      />
+                      <span>
+                        I acknowledge that PhylaX is not financial advice, signals are not proof of safety, on-chain trades can lose funds, and PhylaX cannot recover losses. I accept all risks.
+                      </span>
+                    </label>
+                  ) : null}
 
                   <button
                     id="confirm-execute-btn"
                     onClick={handleExecute}
-                    disabled={!riskAcknowledged}
+                    disabled={(liveMode && !riskAcknowledged) || isExpired || isHighRisk || !!walletMismatch}
                     className={`w-full py-3 px-4 rounded-xl text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
-                      riskAcknowledged 
+                      (!liveMode || riskAcknowledged) && !isExpired && !isHighRisk && !walletMismatch
                         ? "bg-gradient-brand text-white hover:shadow-glow hover:scale-[1.01]" 
                         : "bg-muted text-muted-foreground cursor-not-allowed"
                     }`}
                   >
                     <ShieldCheck className="w-4 h-4" />
-                    Confirm &amp; Sign Transaction
+                    Sign transaction in wallet
                   </button>
                 </>
               ) : (

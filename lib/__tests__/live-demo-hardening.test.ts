@@ -47,6 +47,9 @@ async function runTests() {
   process.env.OKX_PROJECT_ID = "ok";
   process.env.APPROVAL_SECRET = "ok";
   process.env.NEXT_PUBLIC_PRIVY_APP_ID = "ok";
+  process.env.RPC_URL_196 = "ok";
+  process.env.RPC_URL_8453 = "ok";
+  process.env.RPC_URL_56 = "ok";
   process.env.MAX_TRADE_USD_HARD_CAP = "-5";
   const invalidCapReadiness = checkLiveExecutionReadiness();
   assert(invalidCapReadiness.allowed === false, "Live execution is blocked when hard cap is negative");

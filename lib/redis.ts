@@ -148,8 +148,17 @@ export async function checkIdempotency(key: string, ttlSeconds = 300): Promise<b
 
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 
+// P0 Phase 9: Atomic Lua script for INCR + EXPIRE to prevent TTL-less keys on crash
+const RATE_LIMIT_LUA = `
+local current = redis.call("INCR", KEYS[1])
+if current == 1 then
+  redis.call("EXPIRE", KEYS[1], ARGV[1])
+end
+return current
+`;
+
 /**
- * Simple sliding window rate limiter. Returns true if within limit.
+ * Atomic sliding window rate limiter using Lua script. Returns true if within limit.
  */
 export async function checkRateLimit(
   identifier: string,
@@ -160,10 +169,7 @@ export async function checkRateLimit(
   if (!redis) return true; // allow if Redis unavailable
   try {
     const key = `phylax:rate:${identifier}`;
-    const current = await redis.incr(key);
-    if (current === 1) {
-      await redis.expire(key, windowSeconds);
-    }
+    const current = await redis.eval(RATE_LIMIT_LUA, 1, key, windowSeconds) as number;
     return current <= maxRequests;
   } catch {
     return true;

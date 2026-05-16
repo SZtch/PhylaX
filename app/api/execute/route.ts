@@ -81,8 +81,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: reason }, { status: 403 });
     }
 
+    // P0 Phase 9: Always require non-empty walletAddress — never skip via truthy guard
     const approvalWallet = approval.walletAddress;
-    if (approvalWallet && approvalWallet.toLowerCase() !== session.walletAddress.toLowerCase()) {
+    if (!approvalWallet || typeof approvalWallet !== "string" || approvalWallet.trim() === "") {
+      await audit({
+        event: "execution_blocked",
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: "missing_approval_wallet", approvalId },
+      });
+      return NextResponse.json({ error: "Approval has no bound wallet address. Execution rejected." }, { status: 403 });
+    }
+
+    if (approvalWallet.toLowerCase() !== session.walletAddress.toLowerCase()) {
       await audit({
         event: "execution_blocked",
         privyUserId: session.userId,

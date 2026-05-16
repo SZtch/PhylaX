@@ -10,10 +10,14 @@ export interface SourceMeta {
   timestamp: string;
 }
 
+// P0 Phase 9: Server-side hard cap for budget — LLM output cannot exceed this
+const SERVER_HARD_CAP = Math.max(1, parseFloat(process.env.MAX_TRADE_USD_HARD_CAP || "100"));
+
 export const ThesisIntentSchema = z.object({
   timeframe: z.string().default("1h"),
-  maxBudgetUsd: z.number().default(50),
+  maxBudgetUsd: z.number().max(SERVER_HARD_CAP, { message: `maxBudgetUsd cannot exceed server hard cap of $${SERVER_HARD_CAP}` }).default(50),
   maxTokens: z.number().default(5),
+  // P0 Phase 9: riskMode from LLM is accepted by Zod but ALWAYS overridden server-side
   riskMode: z.enum(["conservative", "moderate", "degen"]).default("conservative"),
   chain: z.string().default("x-layer"),
   fallbackChain: z.string().default("base"),

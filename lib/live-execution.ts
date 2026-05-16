@@ -22,6 +22,11 @@ export function checkLiveExecutionReadiness(): { allowed: boolean; reason: strin
   if (!process.env.NEXT_PUBLIC_PRIVY_APP_ID) missing.push("NEXT_PUBLIC_PRIVY_APP_ID");
   if (!process.env.MAX_TRADE_USD_HARD_CAP) missing.push("MAX_TRADE_USD_HARD_CAP");
 
+  // P0 Phase 9: Require RPC URLs for all supported live chains
+  if (!process.env.RPC_URL_196) missing.push("RPC_URL_196");
+  if (!process.env.RPC_URL_8453) missing.push("RPC_URL_8453");
+  if (!process.env.RPC_URL_56) missing.push("RPC_URL_56");
+
   if (missing.length > 0) {
     return {
       allowed: false,

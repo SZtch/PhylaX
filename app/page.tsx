@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { PanelLeft, ChevronDown, LogOut, User } from "lucide-react";
+import { PanelLeft, ChevronDown, LogOut, User, AlertTriangle } from "lucide-react";
 import { Navbar } from "../components/Navbar";
 import { Hero } from "../components/Hero";
 import { SignalDivider } from "../components/SignalDivider";
@@ -239,8 +239,16 @@ export default function Home() {
 
   return (
     <div className="fixed inset-0 h-[100dvh] flex flex-col bg-white text-foreground font-sans selection:bg-electric/20 overflow-hidden overscroll-none">
+      {/* ═══ LIVE MODE BANNER ═══ */}
+      {EXECUTION_MODE === "Live" && (
+        <div className="bg-red-600 text-white text-[11px] sm:text-xs font-bold px-3 py-1.5 text-center flex items-center justify-center gap-2 shrink-0 z-50 animate-pulse">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="truncate">LIVE MODE ACTIVE: REAL FUNDS MAY BE USED. USE CAUTION.</span>
+        </div>
+      )}
+
       {/* ═══ NAVBAR ═══ */}
-      <header className="flex items-center justify-between px-3 sm:px-4 h-12 border-b border-border/60 bg-white shrink-0 z-50">
+      <header className="flex items-center justify-between px-3 sm:px-4 h-12 border-b border-border/60 bg-white shrink-0 z-40">
         <div className="flex items-center gap-2">
           <button
             onClick={() => { if (window.innerWidth < 1024) setMobileSidebar(v => !v); else setSidebarOpen(v => !v); }}

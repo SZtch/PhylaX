@@ -16,7 +16,7 @@ export function RiskBadge({ status }: { status?: RiskStatus }) {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-emerald-50 text-emerald-600 border border-emerald-200">
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-        Safe
+        LOW Risk
       </span>
     );
   }

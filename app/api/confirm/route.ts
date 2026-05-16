@@ -31,79 +31,86 @@ function getRpcUrl(chainId: string): string | null {
   return defaults[chainId] ?? null;
 }
 
-interface TxReceipt {
-  status: "confirmed" | "failed" | "reverted" | "pending";
+interface TxOnchainData {
+  status: "confirmed" | "failed" | "reverted" | "pending" | "not_found";
   blockNumber?: number;
   gasUsed?: string;
   explorerUrl?: string;
+  from?: string;
+  to?: string;
+  hash?: string;
 }
 
-async function checkTxReceipt(
+async function checkTxOnchain(
   txHash: string,
   chainId: string
-): Promise<TxReceipt> {
+): Promise<TxOnchainData> {
   const rpcUrl = getRpcUrl(chainId);
+  
+  // Explorer URL
+  const explorerMap: Record<string, string> = {
+    "1": "https://etherscan.io/tx/",
+    "8453": "https://basescan.org/tx/",
+    "137": "https://polygonscan.com/tx/",
+    "42161": "https://arbiscan.io/tx/",
+    "56": "https://bscscan.com/tx/",
+    "196": "https://www.oklink.com/xlayer/tx/",
+  };
+  const explorerUrl = explorerMap[chainId] ? `${explorerMap[chainId]}${txHash}` : undefined;
+
   if (!rpcUrl) {
-    return { status: "pending" };
+    if (typeof global !== "undefined" && (global as any).__mockCheckTxOnchain) {
+      return (global as any).__mockCheckTxOnchain(txHash, chainId);
+    }
+    return { status: "pending", explorerUrl };
   }
 
   try {
-    const response = await fetch(rpcUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "eth_getTransactionReceipt",
-        params: [txHash],
-        id: 1,
+    const [txRes, rcptRes] = await Promise.all([
+      fetch(rpcUrl, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getTransactionByHash", params: [txHash], id: 1 })
       }),
-    });
+      fetch(rpcUrl, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getTransactionReceipt", params: [txHash], id: 2 })
+      })
+    ]);
 
-    const data = await response.json() as {
-      result?: {
-        status?: string;
-        blockNumber?: string;
-        gasUsed?: string;
-      };
-    };
+    const txData = await txRes.json() as any;
+    const rcptData = await rcptRes.json() as any;
 
-    if (!data.result) {
-      // No receipt yet — transaction still pending
-      return { status: "pending" };
+    if (!txData.result) {
+      if (!txData.error) {
+        return { status: "not_found", explorerUrl };
+      }
+      return { status: "pending", explorerUrl };
     }
 
-    const receipt = data.result;
-    const statusHex = receipt.status;
-    const blockNumber = receipt.blockNumber
-      ? parseInt(receipt.blockNumber, 16)
-      : undefined;
-    const gasUsed = receipt.gasUsed
-      ? parseInt(receipt.gasUsed, 16).toString()
-      : undefined;
+    const tx = txData.result;
+    const from = tx.from;
+    const to = tx.to;
+    const hash = tx.hash;
 
-    // Explorer URL
-    const explorerMap: Record<string, string> = {
-      "1": "https://etherscan.io/tx/",
-      "8453": "https://basescan.org/tx/",
-      "137": "https://polygonscan.com/tx/",
-      "42161": "https://arbiscan.io/tx/",
-      "56": "https://bscscan.com/tx/",
-      "196": "https://www.oklink.com/xlayer/tx/",
-    };
-    const explorerUrl = explorerMap[chainId]
-      ? `${explorerMap[chainId]}${txHash}`
-      : undefined;
+    if (!rcptData.result) {
+      return { status: "pending", explorerUrl, from, to, hash };
+    }
+
+    const receipt = rcptData.result;
+    const statusHex = receipt.status;
+    const blockNumber = receipt.blockNumber ? parseInt(receipt.blockNumber, 16) : undefined;
+    const gasUsed = receipt.gasUsed ? parseInt(receipt.gasUsed, 16).toString() : undefined;
 
     if (statusHex === "0x1") {
-      return { status: "confirmed", blockNumber, gasUsed, explorerUrl };
+      return { status: "confirmed", blockNumber, gasUsed, explorerUrl, from, to, hash };
     } else if (statusHex === "0x0") {
-      return { status: "reverted", blockNumber, gasUsed, explorerUrl };
+      return { status: "reverted", blockNumber, gasUsed, explorerUrl, from, to, hash };
     } else {
-      return { status: "failed", blockNumber, gasUsed, explorerUrl };
+      return { status: "failed", blockNumber, gasUsed, explorerUrl, from, to, hash };
     }
   } catch (err) {
     console.error(`[confirm] RPC check failed for ${txHash}:`, err);
-    return { status: "pending" };
+    return { status: "pending", explorerUrl };
   }
 }
 
@@ -156,7 +163,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { validateExecutionRecord } = await import("../../../lib/approval-store");
+    const { validateExecutionRecord, consumeExecutionRecord } = await import("../../../lib/approval-store");
     const { valid, reason, record } = await validateExecutionRecord(executionId);
     
     if (!valid || !record) {
@@ -191,6 +198,74 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Execution chain does not match the confirm chain." }, { status: 403 });
     }
 
+    // ── 3. Check transaction receipt and ownership ──────────────────────
+    const onchainData = await checkTxOnchain(txHash, resolvedChainId);
+
+    if (onchainData.status === "not_found") {
+      await audit({
+        event: "confirm_blocked",
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: "tx_not_found", executionId, txHash, status: onchainData.status },
+      });
+      return NextResponse.json({ error: "Transaction not found on-chain." }, { status: 400 });
+    }
+
+    if (onchainData.status === "failed" || onchainData.status === "reverted") {
+      await audit({
+        event: "confirm_blocked",
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: "tx_failed", executionId, txHash, status: onchainData.status },
+      });
+      return NextResponse.json({ error: "Transaction failed or reverted on-chain." }, { status: 400 });
+    }
+
+    // Enforce hash match
+    if (onchainData.hash && onchainData.hash.toLowerCase() !== txHash.toLowerCase()) {
+      await audit({
+        event: "confirm_blocked",
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: "hash_mismatch", executionId, txHash, onchainHash: onchainData.hash },
+      });
+      return NextResponse.json({ error: "On-chain transaction hash mismatch." }, { status: 403 });
+    }
+
+    // Enforce from address
+    if (onchainData.from && onchainData.from.toLowerCase() !== record.walletAddress) {
+      await audit({
+        event: "confirm_blocked",
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: "from_mismatch", executionId, txHash, expected: record.walletAddress, actual: onchainData.from },
+      });
+      return NextResponse.json({ error: "Transaction sender does not match execution wallet." }, { status: 403 });
+    }
+
+    // Enforce to address (target/router)
+    if (record.target && onchainData.to && onchainData.to.toLowerCase() !== record.target.toLowerCase()) {
+      await audit({
+        event: "confirm_blocked",
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: "target_mismatch", executionId, txHash, expected: record.target, actual: onchainData.to },
+      });
+      return NextResponse.json({ error: "Transaction target does not match authorized router." }, { status: 403 });
+    }
+
+    // Attempt to consume the execution record for one-time use
+    const consumed = await consumeExecutionRecord(executionId);
+    if (!consumed) {
+      await audit({
+        event: "confirm_blocked",
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: "execution_already_confirmed", executionId, txHash },
+      });
+      return NextResponse.json({ error: "Execution already confirmed or consumed." }, { status: 403 });
+    }
+
     await audit({
       event: "wallet_tx_submitted",
       privyUserId: session.userId,
@@ -198,37 +273,26 @@ export async function POST(req: Request) {
       metadata: { executionId, txHash, chainId: resolvedChainId },
     });
 
-    // ── 3. Check transaction receipt ────────────────────────────────────
-    const receipt = await checkTxReceipt(txHash, resolvedChainId);
-
-    if (receipt.status === "confirmed") {
-      await audit({
-        event: "tx_confirmed",
-        privyUserId: session.userId,
-        walletAddress: session.walletAddress,
-        metadata: {
-          executionId,
-          txHash,
-          blockNumber: receipt.blockNumber,
-          gasUsed: receipt.gasUsed,
-        },
-      });
-    } else if (receipt.status === "reverted" || receipt.status === "failed") {
-      await audit({
-        event: "tx_failed",
-        privyUserId: session.userId,
-        walletAddress: session.walletAddress,
-        metadata: { executionId, txHash, status: receipt.status },
-      });
-    }
+    await audit({
+      event: "tx_confirmed",
+      privyUserId: session.userId,
+      walletAddress: session.walletAddress,
+      metadata: {
+        executionId,
+        txHash,
+        status: onchainData.status,
+        blockNumber: onchainData.blockNumber,
+        gasUsed: onchainData.gasUsed,
+      },
+    });
 
     return NextResponse.json({
       executionId,
       txHash,
-      status: receipt.status,
-      blockNumber: receipt.blockNumber ?? null,
-      gasUsed: receipt.gasUsed ?? null,
-      explorerUrl: receipt.explorerUrl ?? null,
+      status: onchainData.status,
+      blockNumber: onchainData.blockNumber ?? null,
+      gasUsed: onchainData.gasUsed ?? null,
+      explorerUrl: onchainData.explorerUrl ?? null,
       walletAddress: session.walletAddress,
     });
   } catch (err) {

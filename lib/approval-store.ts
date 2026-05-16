@@ -14,11 +14,16 @@ export async function createApproval(
   slippageLimitPercent: number,
   walletAddress: string
 ): Promise<string> {
+  // P0 Phase 9: Reject empty/null/undefined walletAddress — required invariant
+  if (!walletAddress || typeof walletAddress !== "string" || walletAddress.trim() === "") {
+    throw new Error("walletAddress is required and must be non-empty.");
+  }
+
   const id = randomUUID();
   const createdAt = Date.now();
   const expiresAt = createdAt + 5 * 60 * 1000; // 5 minutes expiration
 
-  const approval: Approval & { walletAddress?: string } = {
+  const approval: Approval & { walletAddress: string } = {
     id,
     tokenAddress,
     chain,
@@ -229,5 +234,30 @@ export async function validateExecutionRecord(id: string): Promise<{ valid: bool
     return { valid: true, record };
   } catch {
     return { valid: false, reason: "Invalid execution record data." };
+  }
+}
+
+export async function consumeExecutionRecord(id: string): Promise<boolean> {
+  if (typeof global !== "undefined" && (global as any).__mockConsumeExecutionRecord) {
+    return (global as any).__mockConsumeExecutionRecord(id);
+  }
+
+  const live = isLiveExecutionEnabled();
+  const redis = getRedis();
+
+  if (live && !redis) {
+    return false;
+  }
+
+  if (live && redis) {
+    const deleted = await redis.del(`phylax:exec:${id}`);
+    return deleted > 0;
+  } else {
+    const exists = memoryExecutionStore.has(id);
+    if (exists) {
+      memoryExecutionStore.delete(id);
+      return true;
+    }
+    return false;
   }
 }

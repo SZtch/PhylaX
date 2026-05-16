@@ -62,22 +62,40 @@ Agent Planning & Decision Rules:
 5. Next Action Model: Suggest exactly ONE safe next action (e.g. "Preview quote", "Scan another token"). Never suggest auto-buy, copy-trade, sniper, bypass scan, or skip confirmation. Do not auto-trade.
 `;
 
-export async function parseThesis(thesis: string): Promise<ThesisIntent> {
+export async function parseThesis(thesis: string, trustedRiskMode?: "conservative" | "moderate" | "degen"): Promise<ThesisIntent> {
   if (!anthropic) {
     throw new Error("Anthropic API key is not configured. Real AI agent is unavailable.");
   }
+
+  // P0 Phase 9: Truncate thesis to prevent oversized injection payloads
+  const sanitizedThesis = thesis.slice(0, 2000);
+  const hardCap = parseFloat(process.env.MAX_TRADE_USD_HARD_CAP || "100");
 
   try {
     const response = await anthropic.messages.create({
       model: ANTHROPIC_MODEL,
       max_tokens: 1000,
       temperature: 0,
-      messages: [{ role: "user", content: `${PHYLAX_PERSONA}\nExtract trading intent. Output ONLY valid JSON matching this schema: {"timeframe": "string", "maxBudgetUsd": number, "maxTokens": number, "riskMode": "conservative" | "moderate" | "degen", "chain": "string", "fallbackChain": "string", "requireSimulation": true, "requireUserApproval": true, "slippageLimitPercent": number}. User thesis: "${thesis}"` }]
+      messages: [{ role: "user", content: `${PHYLAX_PERSONA}\nExtract trading intent. Output ONLY valid JSON matching this schema: {"timeframe": "string", "maxBudgetUsd": number, "maxTokens": number, "riskMode": "conservative" | "moderate" | "degen", "chain": "string", "fallbackChain": "string", "requireSimulation": true, "requireUserApproval": true, "slippageLimitPercent": number}. User thesis: "${sanitizedThesis}"` }]
     });
     const content = response.content[0].type === "text" ? response.content[0].text : "";
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON found");
-    return ThesisIntentSchema.parse(JSON.parse(jsonMatch[0]));
+    const parsed = ThesisIntentSchema.parse(JSON.parse(jsonMatch[0]));
+
+    // P0 Phase 9: ALWAYS override riskMode — LLM cannot set this
+    parsed.riskMode = trustedRiskMode || "conservative";
+
+    // P0 Phase 9: ALWAYS clamp budget — LLM cannot exceed hard cap
+    if (parsed.maxBudgetUsd > hardCap) {
+      parsed.maxBudgetUsd = hardCap;
+    }
+
+    // P0 Phase 9: Force safety invariants regardless of LLM output
+    parsed.requireSimulation = true;
+    parsed.requireUserApproval = true;
+
+    return parsed;
   } catch (err) {
     throw new Error(`Failed to parse thesis using Anthropic: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -376,7 +394,8 @@ export async function runAgentLoop(
             amount: quoteResultData.amount,
             scanDecision: quoteResultData.scanDecision,
             source: (quoteResultData.meta as Record<string, unknown>)?.source,
-            approvalId
+            approvalId,
+            targetWalletAddress: walletAddress
           };
         }
       } else if (successfulSignals.length > 0) {

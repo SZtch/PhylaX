@@ -91,7 +91,17 @@ async function runTests() {
     },
     set: async () => "OK",
     eval: async () => null,
+    del: async () => 0,
   });
+
+  // Phase 9: Mock onchain tx check — confirm now requires onchain verification
+  const validConfirmTxHash = "0x" + "e".repeat(64);
+  (global as any).__mockCheckTxOnchain = async (hash: string, chainId: string) => {
+    if (hash === validConfirmTxHash) {
+      return { status: "confirmed", hash, from: mockWallet, to: "0xrouter" };
+    }
+    return { status: "pending" };
+  };
 
   // Create a valid execution record
   const execId = await createExecutionRecord(mockWallet, mockChain);
@@ -132,13 +142,14 @@ async function runTests() {
   const req6 = new Request("http://localhost/api/confirm", {
     method: "POST",
     headers: { "x-forwarded-for": "127.0.0.1" },
-    body: JSON.stringify({ executionId: execId, txHash: "0x" + "e".repeat(64), chainId: mockChain })
+    body: JSON.stringify({ executionId: execId, txHash: validConfirmTxHash, chainId: mockChain })
   });
   const res6 = await ConfirmPost(req6);
   assert(res6.status === 200, "/api/confirm accepts valid verified wallet + matching execution + successful receipt.");
 
   assert(!redisWasRead, "/api/confirm explicitly ignores Redis for memory records in non-live mode.");
   delete (global as any).__mockGetRedis;
+  delete (global as any).__mockCheckTxOnchain;
 
   // Check confirm code to ensure it doesn't broadcast
   const confirmCode = readFileSync(path.join(process.cwd(), "app/api/confirm/route.ts"), "utf-8");
@@ -168,6 +179,9 @@ async function runTests() {
   process.env.APPROVAL_SECRET = "dummy";
   process.env.NEXT_PUBLIC_PRIVY_APP_ID = "dummy";
   process.env.MAX_TRADE_USD_HARD_CAP = "100";
+  process.env.RPC_URL_196 = "dummy";
+  process.env.RPC_URL_8453 = "dummy";
+  process.env.RPC_URL_56 = "dummy";
   
   (global as any).__mockGetRedis = () => ({
     get: async (key: string) => {

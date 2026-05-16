@@ -130,6 +130,9 @@ export async function searchToken(
   query: string,
   chain: string
 ): Promise<TokenSearchResult[]> {
+  if (typeof global !== "undefined" && (global as any).__mockSearchTokenHandler) {
+    return (global as any).__mockSearchTokenHandler(query, chain);
+  }
   const chainConfig = normalizeChain(chain);
   try {
     const raw = await runCli([
@@ -307,12 +310,27 @@ export async function getQuotePreflight(
     const toAmountRaw = parseFloat(String(quote.toTokenAmount ?? quote.to_token_amount ?? "0"));
     const toToken = (quote.toToken ?? quote.to_token ?? {}) as Record<string, unknown>;
     const toSymbol = String(toToken.tokenSymbol ?? toToken.symbol ?? "UNKNOWN");
-    const toDecimals = parseInt(String(toToken.decimal ?? toToken.decimals ?? "18"), 10);
-    const toUnitPrice = parseFloat(String(toToken.tokenUnitPrice ?? toToken.unit_price ?? "1"));
+    const toDecimalsRaw = toToken.decimal ?? toToken.decimals;
+    const toUnitPriceRaw = toToken.tokenUnitPrice ?? toToken.unit_price;
+    if (toDecimalsRaw === undefined || toUnitPriceRaw === undefined) {
+      throw new OkxRealModeError("Missing token price or decimals in OKX quote response. Quote blocked.", chainConfig);
+    }
+    const toDecimals = parseInt(String(toDecimalsRaw), 10);
+    const toUnitPrice = parseFloat(String(toUnitPriceRaw));
+    if (isNaN(toDecimals) || isNaN(toUnitPrice) || toUnitPrice <= 0) {
+      throw new OkxRealModeError("Invalid token price or decimals in OKX quote response. Quote blocked.", chainConfig);
+    }
     const toAmountUsd = (toAmountRaw / Math.pow(10, toDecimals)) * toUnitPrice;
 
     const fromTokenNode = (quote.fromToken ?? quote.from_token ?? {}) as Record<string, unknown>;
-    const fromUnitPrice = parseFloat(String(fromTokenNode.tokenUnitPrice ?? fromTokenNode.unit_price ?? "1"));
+    const fromUnitPriceRaw = fromTokenNode.tokenUnitPrice ?? fromTokenNode.unit_price;
+    if (fromUnitPriceRaw === undefined) {
+      throw new OkxRealModeError("Missing fromToken price in OKX quote response. Quote blocked.", chainConfig);
+    }
+    const fromUnitPrice = parseFloat(String(fromUnitPriceRaw));
+    if (isNaN(fromUnitPrice) || fromUnitPrice <= 0) {
+      throw new OkxRealModeError("Invalid fromToken price in OKX quote response. Quote blocked.", chainConfig);
+    }
     const fromAmountUsd = amount * fromUnitPrice;
 
     const gasLimit = parseFloat(String(quote.estimatedGas ?? quote.estimated_gas ?? "0"));
@@ -501,6 +519,24 @@ export async function getSwapTxData(
   }
 }
 
+export function toMinimalUnits(readableAmount: number | string, decimals: number): string {
+  if (typeof readableAmount === "number" && (isNaN(readableAmount) || readableAmount < 0 || !isFinite(readableAmount))) {
+    throw new Error("Invalid token amount");
+  }
+  const numStr = String(readableAmount).trim();
+  if (numStr === "" || numStr.includes('e')) {
+    throw new Error("Amount notation not supported or empty");
+  }
+  let parts = numStr.split('.');
+  let intPart = parts[0];
+  let decPart = parts[1] || "";
+  if (decPart.length > decimals) {
+    decPart = decPart.slice(0, decimals);
+  }
+  const paddedDecPart = decPart.padEnd(decimals, "0");
+  return intPart + paddedDecPart;
+}
+
 export async function checkAllowance(
   chain: string,
   walletAddress: string,
@@ -511,7 +547,7 @@ export async function checkAllowance(
   const chainConfig = normalizeChain(chain);
   
   if (typeof global !== "undefined" && (global as any).__mockCheckAllowance) {
-    return (global as any).__mockCheckAllowance(chain, walletAddress, tokenAddress, readableAmount);
+    return (global as any).__mockCheckAllowance(chain, walletAddress, tokenAddress, readableAmount, decimals);
   }
 
   try {
@@ -528,11 +564,19 @@ export async function checkAllowance(
     const result = items[0] as Record<string, unknown>;
     const allowance = String(result.allowance ?? "0");
     
-    // Parse minimal units
-    // e.g. amount = 10, decimals = 6 -> 10000000
-    // Wait, javascript numbers might lose precision.
-    const needed = readableAmount * Math.pow(10, decimals);
-    const hasSufficient = parseFloat(allowance) >= needed;
+    let needed = "0";
+    try {
+      needed = toMinimalUnits(readableAmount, decimals);
+    } catch {
+      return { hasSufficient: false, allowance: "0", meta: sourceMeta("okx_real_failed", chainConfig) };
+    }
+    
+    let hasSufficient = false;
+    try {
+      hasSufficient = BigInt(allowance) >= BigInt(needed);
+    } catch {
+      hasSufficient = false;
+    }
 
     return {
       hasSufficient,
@@ -544,35 +588,82 @@ export async function checkAllowance(
   }
 }
 
+export async function checkBalance(
+  chain: string,
+  walletAddress: string,
+  tokenAddress: string,
+  readableAmount: number | string
+): Promise<{ hasSufficient: boolean; balance: string; meta: SourceMeta }> {
+  if (typeof global !== "undefined" && (global as any).__mockCheckBalance) {
+    return (global as any).__mockCheckBalance(chain, walletAddress, tokenAddress, readableAmount);
+  }
+  const chainConfig = normalizeChain(chain);
+
+  // Native token is passed as empty address, so for OKX portfolio we use just "chainIndex:"
+  const resolvedToken = tokenAddress ? tokenAddress.toLowerCase() : "";
+  const tokenArg = `${chainConfig.chainIndex}:${resolvedToken}`;
+
+  try {
+    const raw = await runCli([
+      "portfolio", "token-balances",
+      "--address", walletAddress.toLowerCase(),
+      "--tokens", tokenArg
+    ]);
+    const items = unwrapCliResult(raw, "portfolio token-balances");
+    if (items.length === 0) {
+      return { hasSufficient: false, balance: "0", meta: sourceMeta("okx_real", chainConfig) };
+    }
+    const result = items[0] as Record<string, unknown>;
+    const balanceStr = String(result.balance ?? result.amount ?? "0");
+    const decimalsRaw = result.decimal ?? result.decimals;
+    
+    let decimals = 18;
+    const isNative = !tokenAddress || tokenAddress.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    
+    if (decimalsRaw !== undefined) {
+      decimals = parseInt(String(decimalsRaw), 10);
+    } else if (!isNative) {
+      return { hasSufficient: false, balance: "0", meta: sourceMeta("okx_real_failed", chainConfig) }; // Missing decimals blocks quote
+    }
+
+    let hasSufficient = false;
+    try {
+      const balanceMinimal = toMinimalUnits(balanceStr, decimals);
+      const neededMinimal = toMinimalUnits(readableAmount, decimals);
+      hasSufficient = BigInt(balanceMinimal) >= BigInt(neededMinimal);
+    } catch {
+      hasSufficient = false;
+    }
+    
+    return {
+      hasSufficient,
+      balance: balanceStr,
+      meta: sourceMeta("okx_real", chainConfig)
+    };
+  } catch (err) {
+    return { hasSufficient: false, balance: "0", meta: sourceMeta("okx_real_failed", chainConfig) };
+  }
+}
+
 export async function getApproveTxData(
   chain: string,
   tokenAddress: string,
   readableAmount: number,
-  decimals: number = 18
+  decimals: number
 ): Promise<{ txData: SwapTxData | null; error: string | null; meta: SourceMeta }> {
   const chainConfig = normalizeChain(chain);
   
   if (typeof global !== "undefined" && (global as any).__mockGetApproveTxData) {
-    return (global as any).__mockGetApproveTxData(chain, tokenAddress, readableAmount);
+    return (global as any).__mockGetApproveTxData(chain, tokenAddress, readableAmount, decimals);
   }
 
   // Convert to minimal units
   let minimalUnits = "0";
   if (readableAmount > 0) {
-    // using BigInt if possible, but safe integer math is ok for standard sizes
     try {
-      // Avoid scientific notation e.g. 1e21 -> "1000000000000000000000"
-      const numStr = readableAmount.toString();
-      let parts = numStr.split('.');
-      let intPart = parts[0];
-      let decPart = parts[1] || "";
-      if (decPart.length > decimals) {
-        decPart = decPart.slice(0, decimals);
-      }
-      const paddedDecPart = decPart.padEnd(decimals, "0");
-      minimalUnits = intPart + paddedDecPart;
-    } catch {
-      minimalUnits = (readableAmount * Math.pow(10, decimals)).toLocaleString('fullwide', {useGrouping:false});
+      minimalUnits = toMinimalUnits(readableAmount, decimals);
+    } catch (err: any) {
+      return { txData: null, error: err.message, meta: sourceMeta("okx_real_failed", chainConfig) };
     }
   }
 
@@ -609,4 +700,20 @@ export async function getApproveTxData(
       meta: sourceMeta("okx_real_failed", chainConfig)
     };
   }
+}
+
+export async function getTokenDecimals(chain: string, tokenAddress: string): Promise<number> {
+  const chainConfig = normalizeChain(chain);
+  if (!tokenAddress || tokenAddress === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") return 18;
+  const tokenArg = `${chainConfig.chainIndex}:${tokenAddress.toLowerCase()}`;
+  try {
+    const priceRaw = await runCli(["market", "price-info", "--tokens", tokenArg]);
+    const items = unwrapCliResult(priceRaw, "market price-info", chainConfig);
+    if (items.length > 0) {
+      const info = items[0] as Record<string, unknown>;
+      const decimals = info.decimal ?? info.decimals;
+      if (decimals !== undefined) return parseInt(String(decimals), 10);
+    }
+  } catch {}
+  throw new OkxRealModeError(`Unable to determine decimals for token ${tokenAddress} on ${chain}.`, chainConfig);
 }

@@ -46,9 +46,10 @@ function runTests() {
   console.log("  ✅ normalizeChain rejects unsupported chains");
   console.log("  ✅ Missing chain does not silently fallback to X Layer");
 
-  // 11. Solana does not enter EVM
-  assert.throws(() => normalizeChain("solana"), /Solana is not supported in the EVM execution path/);
-  console.log("  ✅ Solana does not enter EVM quote/execute path");
+  // 11. Solana is recognized as a supported chain
+  const solana = normalizeChain("solana");
+  assert.strictEqual(solana.id, "solana", "normalizeChain should resolve solana to solana");
+  console.log("  ✅ Solana is recognized as a supported chain config");
 
   console.log("\n── default token behavior in getQuotePreflight ──");
   

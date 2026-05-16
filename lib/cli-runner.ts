@@ -24,6 +24,9 @@ const ALLOWED_COMMANDS = new Set([
   "security token-scan",
   "swap quote",
   "swap swap",
+  "swap check-approvals",
+  "swap approve",
+  "portfolio token-balances",
 ]);
 
 export class OkxCliError extends Error {
@@ -42,6 +45,9 @@ export class OkxCliError extends Error {
  * @returns     Parsed JSON output from stdout
  */
 export async function runCli(args: string[]): Promise<unknown> {
+  if (typeof global !== "undefined" && (global as any).__mockRunCli) {
+    return (global as any).__mockRunCli(args);
+  }
   if (args.length < 2) {
     throw new OkxCliError("Invalid CLI args", "Must have at least group and subcommand");
   }

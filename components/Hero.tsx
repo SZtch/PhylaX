@@ -140,7 +140,7 @@ export function Hero({ onLaunch }: { onLaunch?: () => void }) {
           <div className="absolute inset-16 rounded-full bg-gradient-brand opacity-20 blur-3xl" />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/assets/aegis-mark.png"
+            src="/assets/PhylaX-mark.png"
             alt="PhylaX 3D shield emblem"
             width={520}
             height={520}

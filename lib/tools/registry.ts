@@ -101,6 +101,16 @@ registerTool({
     try {
       const chainConfig = normalizeChain(input.chain);
       const results = await searchToken(input.symbol, chainConfig.id);
+      
+      // Block ambiguous symbols
+      if (results.length > 1) {
+        return { 
+          error: "Symbol is ambiguous. Multiple tokens found. Please ask the user to provide the exact contract address to proceed securely.", 
+          blocked: true,
+          candidates: results 
+        };
+      }
+
       return { results };
     } catch (err: any) {
       return { error: err.message };
@@ -125,17 +135,40 @@ registerTool({
     },
     required: ["to_address", "amount", "chain"],
   },
-  execute: async (input: { to_address: string; from_address?: string; from_symbol?: string; amount: number; chain: string, slippage?: number, risk_mode?: string }) => {
+  execute: async (input: { to_address: string; from_address?: string; from_symbol?: string; amount: number; chain: string, slippage?: number, risk_mode?: string }, context?: ToolContext) => {
     let chainConfig;
     try {
       chainConfig = normalizeChain(input.chain);
     } catch (err: any) {
       return { error: err.message, blocked: true };
     }
+
+    if (chainConfig.id !== "x-layer") {
+      return {
+        error: "Live execution is currently available on X Layer only. Base/BSC/Solana support is Coming Soon.",
+        blocked: true
+      };
+    }
     const chain = chainConfig.id;
     const amount = input.amount;
     const fromSymbol = input.from_symbol || chainConfig.defaultFromSymbol;
     const fromAddress = input.from_address || chainConfig.defaultFromToken;
+
+    if (!context?.walletAddress) {
+      return {
+        error: "Verified wallet address is required for execution. Please connect your wallet.",
+        blocked: true
+      };
+    }
+
+    const { checkBalance } = await import("../okx");
+    const balanceCheck = await checkBalance(chain, context.walletAddress, fromAddress, amount);
+    if (!balanceCheck.hasSufficient) {
+      return {
+        error: `Insufficient balance. Verified wallet has ${balanceCheck.balance} ${fromSymbol}, but ${amount} is required. Quote and execution blocked.`,
+        blocked: true
+      };
+    }
 
     // Enforce scan before quote
     let scanDecision: "safe" | "high_risk" | "unknown" | "skipped" = "safe";

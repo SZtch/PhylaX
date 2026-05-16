@@ -2,6 +2,9 @@
 
 **PhylaX** is a secure, flexible, and fully agentic intent-based DeFi trading assistant built for the **Build X-Agent Hackathon**. 
 
+> [!IMPORTANT]
+> **Live Mode Notice**: Live-money execution is currently enabled for **X Layer only**. Support for Base, BSC, and Solana is visible in the UI as "Coming Soon" and is currently disabled for live execution for safety during the initial smoke test phase. PhylaX server never broadcasts transactions; user wallet remains the only signer.
+
 It uses the capabilities of OKX's Web3 ecosystem and XAgent skills to enable users to define high-level trading intents (e.g., "Find the best yield on X Layer" or "Swap 100 USDC to OKB") and have an AI agent autonomously plan, quote, scan for risks, and build execution-ready transactions for their wallet.
 
 ## Build X-Agent Hackathon Integration

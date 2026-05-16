@@ -206,7 +206,11 @@ async function runTests() {
     meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
   });
 
-  let swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "" });
+  (global as any).__mockCheckBalanceHandler = async () => ({
+    hasSufficient: true, allowance: "100", meta: { source: "mock", provider: "mock", chainIndex: "196", chainName: "mock", chainSlug: "mock", timestamp: "" }
+  });
+
+  let swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "", walletAddress: "0xmockwallet" });
   const sr = swapRes as Record<string, unknown>;
   assert(sr.blocked === true, "MEDIUM risk blocks quote.");
   assert(!sr.quote, "MEDIUM risk does not produce a quote.");
@@ -217,12 +221,12 @@ async function runTests() {
     isHoneypot: false, triggeredLabels: ["Pump", "Wash Trading"],
     meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
   });
-  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "" });
+  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "", walletAddress: "0xmockwallet" });
   assert((swapRes as Record<string, unknown>).blocked === true, "isPump/isWash triggers block quote.");
 
   // Test 3.3: scan failure blocks quote
   (global as any).__mockScanTokenHandler = async () => { throw new Error("Network error"); };
-  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "" });
+  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "", walletAddress: "0xmockwallet" });
   assert((swapRes as Record<string, unknown>).blocked === true, "scan failure blocks quote.");
 
   // Test 3.4: executionAllowed=false blocks quote
@@ -231,7 +235,7 @@ async function runTests() {
     isHoneypot: false, triggeredLabels: [],
     meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
   });
-  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "" });
+  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "", walletAddress: "0xmockwallet" });
   assert((swapRes as Record<string, unknown>).blocked === true, "executionAllowed=false blocks quote.");
 
   // Test 3.5: degen does not bypass honeypot
@@ -240,7 +244,7 @@ async function runTests() {
     isHoneypot: true, triggeredLabels: ["Honeypot"],
     meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
   });
-  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196", risk_mode: "degen" }, { conversationId: "" });
+  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196", risk_mode: "degen" }, { conversationId: "", walletAddress: "0xmockwallet" });
   assert((swapRes as Record<string, unknown>).blocked === true, "degen does not bypass honeypot.");
 
   // Test 3.6: LOW risk allows quote
@@ -249,10 +253,43 @@ async function runTests() {
     isHoneypot: false, triggeredLabels: [],
     meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
   });
-  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "" });
+  // Mock checkBalance to return sufficient funds
+  (global as any).__mockCheckBalance = async () => ({
+    hasSufficient: true,
+    balance: "100",
+    meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
+  });
+
+  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "", walletAddress: "0xmockwallet" });
   assert((swapRes as Record<string, unknown>).blocked !== true && (swapRes as Record<string, unknown>).quote !== undefined, "LOW risk allows quote.");
 
+  // Test 3.7: Base live execution blocked as Coming Soon
+  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "base" }, { conversationId: "", walletAddress: "0xmockwallet" });
+  assert((swapRes as Record<string, unknown>).blocked === true && (swapRes as Record<string, unknown>).error.includes("Coming Soon"), "Base blocked as Coming Soon.");
+
+  // Test 3.8: BSC live execution blocked as Coming Soon
+  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "bsc" }, { conversationId: "", walletAddress: "0xmockwallet" });
+  assert((swapRes as Record<string, unknown>).blocked === true && (swapRes as Record<string, unknown>).error.includes("Coming Soon"), "BSC blocked as Coming Soon.");
+
+  // Test 3.9: Solana live execution blocked as Coming Soon
+  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "solana" }, { conversationId: "", walletAddress: "0xmockwallet" });
+  assert((swapRes as Record<string, unknown>).blocked === true && (swapRes as Record<string, unknown>).error.includes("Coming Soon"), "Solana blocked as Coming Soon.");
+
+  // Test 3.10: missing wallet blocks X Layer quote
+  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "" });
+  assert((swapRes as Record<string, unknown>).blocked === true && (swapRes as Record<string, unknown>).error.includes("wallet address is required"), "Missing wallet blocks X Layer quote.");
+
+  // Test 3.11: insufficient balance blocks X Layer quote
+  (global as any).__mockCheckBalance = async () => ({
+    hasSufficient: false,
+    balance: "0.1",
+    meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
+  });
+  swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "", walletAddress: "0xmockwallet" });
+  assert((swapRes as Record<string, unknown>).blocked === true && (swapRes as Record<string, unknown>).error.includes("Insufficient balance"), "Insufficient balance blocks X Layer quote.");
+
   delete (global as any).__mockScanTokenHandler;
+  delete (global as any).__mockCheckBalance;
   delete (global as any).__mockGetQuotePreflightHandler;
 
   // ── 4. X Layer RPC Readiness ───────────────────────────────────────────────

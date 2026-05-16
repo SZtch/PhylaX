@@ -50,9 +50,10 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { approvalId, riskAcknowledged } = body as {
+    const { approvalId, riskAcknowledged, approvalTxHash } = body as {
       approvalId?: string;
       riskAcknowledged?: boolean;
+      approvalTxHash?: string;
     };
 
     // ── 2. Validate required inputs ───────────────────────────────────────
@@ -63,6 +64,10 @@ export async function POST(req: Request) {
     if (!riskAcknowledged) {
       return NextResponse.json({ error: "Risk acknowledgement is required for execution." }, { status: 400 });
     }
+
+    const { validateAndConsumeApproval, markApprovalTxConsumed } = await import("../../../lib/approval-store");
+    const { normalizeChain } = await import("../../../lib/chains");
+    const { checkTxOnchain } = await import("../confirm/route");
 
     // ── 3. Validate and atomically consume approval ───────────────────────
     const { valid, reason, approval, code } = await validateAndConsumeApproval(approvalId);
@@ -79,6 +84,63 @@ export async function POST(req: Request) {
         metadata: { reason: reason ?? "invalid_approval", approvalId },
       });
       return NextResponse.json({ error: reason }, { status: 403 });
+    }
+
+    let chainConfig;
+    try {
+      chainConfig = normalizeChain(approval.chain);
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+
+    if (chainConfig.id !== "x-layer") {
+      return NextResponse.json({
+        error: "Live execution is currently available on X Layer only. Base/BSC/Solana support is Coming Soon."
+      }, { status: 403 });
+    }
+
+    if (approval.needsApproval && !approvalTxHash) {
+      return NextResponse.json({ error: "Approval transaction hash is missing but required for execution." }, { status: 400 });
+    }
+
+    if (approvalTxHash) {
+      // chainConfig already resolved above
+      
+      const onchainData = await checkTxOnchain(approvalTxHash, chainConfig.chainIndex);
+      if (onchainData.status !== "confirmed") {
+        return NextResponse.json({ error: "Approval transaction is not confirmed on-chain. Please wait or try again." }, { status: 400 });
+      }
+      if (onchainData.from && onchainData.from.toLowerCase() !== session.walletAddress.toLowerCase()) {
+        return NextResponse.json({ error: "Approval transaction sender does not match verified wallet." }, { status: 403 });
+      }
+      if (approval.fromToken && onchainData.to && onchainData.to.toLowerCase() !== approval.fromToken.toLowerCase()) {
+        return NextResponse.json({ error: "Approval transaction target does not match the expected token contract." }, { status: 403 });
+      }
+
+      if (approval.needsApproval && onchainData.input && onchainData.input.length >= 138) {
+        const method = onchainData.input.substring(0, 10);
+        if (method.toLowerCase() !== "0x095ea7b3") {
+          return NextResponse.json({ error: "Approval transaction has invalid method selector." }, { status: 403 });
+        }
+        const spender = "0x" + onchainData.input.substring(34, 74).toLowerCase();
+        if (approval.spender && spender !== approval.spender.toLowerCase()) {
+          return NextResponse.json({ error: "Approval transaction spender does not match expected router." }, { status: 403 });
+        }
+        const amountHex = "0x" + onchainData.input.substring(74, 138);
+        try {
+          const amountBigInt = BigInt(amountHex);
+          const expectedBigInt = BigInt(approval.approveAmount || "0");
+          if (amountBigInt < expectedBigInt) {
+            return NextResponse.json({ error: "Approval transaction amount is insufficient." }, { status: 403 });
+          }
+        } catch {}
+      }
+
+      // Mark consumed ONLY after successful validation
+      const isNew = await markApprovalTxConsumed(approvalTxHash);
+      if (!isNew) {
+        return NextResponse.json({ error: "Approval replay blocked." }, { status: 403 });
+      }
     }
 
     // P0 Phase 9: Always require non-empty walletAddress — never skip via truthy guard
@@ -108,14 +170,9 @@ export async function POST(req: Request) {
 
     // Resolve chainIndex for risk policy and OKX API
     const { getSwapTxData } = await import("../../../lib/okx");
-    const { normalizeChain } = await import("../../../lib/chains");
+    // normalizeChain already imported above
     
-    let chainConfig;
-    try {
-      chainConfig = normalizeChain(approval.chain);
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 400 });
-    }
+    // chainConfig already resolved above
     const chainIndex = chainConfig.chainIndex;
 
     // ── 4. Check if live execution is enabled ─────────────────────────────

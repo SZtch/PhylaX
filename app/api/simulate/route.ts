@@ -86,25 +86,42 @@ export async function POST(req: Request) {
 
     // We can fetch allowance here. We need the router address.
     // Let's call getSwapTxData to get the router address!
-    const { getSwapTxData, checkAllowance, getApproveTxData } = await import("../../../lib/okx");
+    const { getSwapTxData, checkAllowance, getApproveTxData, getTokenDecimals, toMinimalUnits } = await import("../../../lib/okx");
     const swapData = await getSwapTxData(address, amount, chain, session.walletAddress, fromToken, slippageLimitPercent);
     
     let routerAddress: string | undefined = undefined;
     let allowanceResult = { hasSufficient: true };
     let approveTxData = null;
+    let decimals = 18;
+    let approveAmountStr: string | undefined = undefined;
 
     if (swapData.txData && swapData.txData.to) {
       routerAddress = swapData.txData.to;
-      allowanceResult = await checkAllowance(chain, session.walletAddress, fromToken, amount);
+      decimals = await getTokenDecimals(chain, fromToken);
+      allowanceResult = await checkAllowance(chain, session.walletAddress, fromToken, amount, decimals);
       if (!allowanceResult.hasSufficient) {
-        const approveData = await getApproveTxData(chain, fromToken, amount);
+        const approveData = await getApproveTxData(chain, fromToken, amount, decimals);
         approveTxData = approveData.txData;
+        try {
+          approveAmountStr = toMinimalUnits(amount, decimals);
+        } catch {}
       }
     } else if (swapData.error) {
        return NextResponse.json({ error: swapData.error }, { status: 400 });
     }
 
-    const approvalId = await createApproval(address, chain, fromAmountUsd, slippageLimitPercent, session.walletAddress, fromToken, routerAddress);
+    const approvalId = await createApproval(
+      address, 
+      chain, 
+      fromAmountUsd, 
+      slippageLimitPercent, 
+      session.walletAddress, 
+      fromToken, 
+      routerAddress,
+      !allowanceResult.hasSufficient,
+      approveAmountStr,
+      routerAddress
+    );
 
     return NextResponse.json({ 
       simulation, 

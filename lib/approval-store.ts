@@ -14,7 +14,10 @@ export async function createApproval(
   slippageLimitPercent: number,
   walletAddress: string,
   fromToken?: string,
-  routerAddress?: string
+  routerAddress?: string,
+  needsApproval?: boolean,
+  approveAmount?: string,
+  spender?: string
 ): Promise<string> {
   // P0 Phase 9: Reject empty/null/undefined walletAddress — required invariant
   if (!walletAddress || typeof walletAddress !== "string" || walletAddress.trim() === "") {
@@ -36,7 +39,10 @@ export async function createApproval(
     expiresAt,
     used: false,
     routerAddress: routerAddress?.toLowerCase(),
-    walletAddress: walletAddress.toLowerCase()
+    walletAddress: walletAddress.toLowerCase(),
+    needsApproval,
+    approveAmount,
+    spender: spender?.toLowerCase()
   };
   
   const live = isLiveExecutionEnabled();
@@ -148,6 +154,10 @@ export async function validateAndConsumeApproval(id: string): Promise<{ valid: b
 
   if (consumed) {
     return { valid: false, reason: "Approval ID has already been used.", code: "replay" };
+  }
+
+  if (typeof global !== "undefined" && (global as any).__mockValidateAndConsumeApproval) {
+    return (global as any).__mockValidateAndConsumeApproval(id);
   }
 
   if (missing || !approval) {
@@ -263,5 +273,28 @@ export async function consumeExecutionRecord(id: string): Promise<boolean> {
       return true;
     }
     return false;
+  }
+}
+export async function markApprovalTxConsumed(txHash: string): Promise<boolean> {
+  const live = isLiveExecutionEnabled();
+  const redis = getRedis();
+
+  const key = `phylax:approval_tx:${txHash.toLowerCase()}`;
+
+  if (live) {
+    if (!redis) return false;
+    const set = await redis.set(key, "1", "EX", 86400 * 7, "NX"); // 7 days
+    return set === "OK";
+  } else {
+    if (redis) {
+      try {
+        const set = await redis.set(key, "1", "EX", 86400 * 7, "NX");
+        return set === "OK";
+      } catch {}
+    }
+    // Fallback to memory
+    if (memoryStore.has(key)) return false;
+    memoryStore.set(key, { id: "consumed", tokenAddress: "", chain: "", budgetUsd: 0, slippageLimitPercent: 0, createdAt: 0, expiresAt: 0, used: true, walletAddress: "" });
+    return true;
   }
 }

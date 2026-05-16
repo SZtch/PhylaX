@@ -271,7 +271,7 @@ export async function runAgentLoop(
           isError = true;
         } else {
           try {
-            result = await toolDef.execute(toolInput, { conversationId });
+            result = await toolDef.execute(toolInput, { conversationId, walletAddress });
           } catch (err: unknown) {
             result = { error: err instanceof Error ? err.message : String(err) };
             isError = true;

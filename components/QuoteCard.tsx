@@ -84,6 +84,7 @@ export function QuoteCard({
   const slippageOk = quote.slippage < 3;
   const [execState, setExecState] = useState<ExecutionState>("idle");
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [approvalTxHash, setApprovalTxHash] = useState<string | null>(null);
   const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
   const [showErrorDetail, setShowErrorDetail] = useState(false);
@@ -117,7 +118,8 @@ export function QuoteCard({
       try {
         const txParams: Record<string, string> = { from: walletAddress, to: approveTxData.to, data: approveTxData.data };
         if (approveTxData.value) txParams.value = approveTxData.value;
-        await provider.request({ method: "eth_sendTransaction", params: [txParams] });
+        const hash = await provider.request({ method: "eth_sendTransaction", params: [txParams] }) as string;
+        setApprovalTxHash(hash);
         setCurrentNeedsApproval(false);
         setExecState("idle");
         return;
@@ -151,6 +153,7 @@ export function QuoteCard({
         body: JSON.stringify({
           approvalId,
           riskAcknowledged,
+          approvalTxHash,
         }),
       });
 

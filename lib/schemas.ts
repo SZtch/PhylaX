@@ -55,6 +55,9 @@ export interface Approval {
   used: boolean;
   fromToken?: string;
   routerAddress?: string;
+  needsApproval?: boolean;
+  approveAmount?: string;
+  spender?: string;
 }
 
 export interface SimulationResult {

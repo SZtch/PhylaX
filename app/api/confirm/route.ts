@@ -39,12 +39,17 @@ interface TxOnchainData {
   from?: string;
   to?: string;
   hash?: string;
+  input?: string;
 }
 
-async function checkTxOnchain(
+export async function checkTxOnchain(
   txHash: string,
   chainId: string
 ): Promise<TxOnchainData> {
+  if (typeof global !== "undefined" && (global as any).__mockCheckTxOnchain) {
+    return (global as any).__mockCheckTxOnchain(txHash, chainId);
+  }
+
   const rpcUrl = getRpcUrl(chainId);
   
   // Explorer URL
@@ -91,9 +96,10 @@ async function checkTxOnchain(
     const from = tx.from;
     const to = tx.to;
     const hash = tx.hash;
+    const input = tx.input;
 
     if (!rcptData.result) {
-      return { status: "pending", explorerUrl, from, to, hash };
+      return { status: "pending", explorerUrl, from, to, hash, input };
     }
 
     const receipt = rcptData.result;
@@ -102,11 +108,11 @@ async function checkTxOnchain(
     const gasUsed = receipt.gasUsed ? parseInt(receipt.gasUsed, 16).toString() : undefined;
 
     if (statusHex === "0x1") {
-      return { status: "confirmed", blockNumber, gasUsed, explorerUrl, from, to, hash };
+      return { status: "confirmed", blockNumber, gasUsed, explorerUrl, from, to, hash, input };
     } else if (statusHex === "0x0") {
-      return { status: "reverted", blockNumber, gasUsed, explorerUrl, from, to, hash };
+      return { status: "reverted", blockNumber, gasUsed, explorerUrl, from, to, hash, input };
     } else {
-      return { status: "failed", blockNumber, gasUsed, explorerUrl, from, to, hash };
+      return { status: "failed", blockNumber, gasUsed, explorerUrl, from, to, hash, input };
     }
   } catch (err) {
     console.error(`[confirm] RPC check failed for ${txHash}:`, err);
@@ -188,7 +194,22 @@ export async function POST(req: Request) {
 
     const resolvedChainId = chainId ?? record.chainId;
     
-    if (resolvedChainId !== record.chainId) {
+    const { normalizeChain } = await import("../../../lib/chains");
+    let chainConfig;
+    try {
+      chainConfig = normalizeChain(resolvedChainId);
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+
+    let recordChainConfig;
+    try {
+      recordChainConfig = normalizeChain(record.chainId);
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+
+    if (chainConfig.id !== recordChainConfig.id) {
       await audit({
         event: "confirm_blocked",
         privyUserId: session.userId,
@@ -196,6 +217,12 @@ export async function POST(req: Request) {
         metadata: { reason: "chain_mismatch", executionId, txHash, expected: record.chainId, received: resolvedChainId },
       });
       return NextResponse.json({ error: "Execution chain does not match the confirm chain." }, { status: 403 });
+    }
+
+    if (chainConfig.id !== "x-layer") {
+      return NextResponse.json({
+        error: "Live execution is currently available on X Layer only. Base/BSC/Solana support is Coming Soon."
+      }, { status: 403 });
     }
 
     // ── 3. Check transaction receipt and ownership ──────────────────────

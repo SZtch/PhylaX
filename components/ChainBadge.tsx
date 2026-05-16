@@ -1,6 +1,7 @@
 "use client";
  
  import Image from "next/image";
+import { getChainById } from "../lib/chains";
 
 /**
  * ChainBadge — Reusable chain identity badge with inline SVG logo.
@@ -15,7 +16,8 @@ interface Props {
 }
 
 function ChainLogo({ chainId, size }: { chainId: string; size: number }) {
-  const src = chainId === "base" ? "/assets/base.png" : "/assets/x-layer.jpg";
+  const chain = getChainById(chainId);
+  const src = chain.iconLabel;
   return (
     <div 
       className="shrink-0 rounded-md overflow-hidden bg-muted border border-border/20"

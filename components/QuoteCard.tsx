@@ -322,7 +322,7 @@ export function QuoteCard({
                   <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
                     <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 text-blue-500 mt-0.5" />
                     <div>
-                      <p className="font-semibold text-blue-800 mb-0.5">User-Signed Execution (Demo Hard Cap Applies)</p>
+                      <p className="font-semibold text-blue-800 mb-0.5">User-Signed Execution (Trade Hard Cap Applies)</p>
                       <p>Your wallet will ask you to review and sign. PhylaX never signs for you.</p>
                     </div>
                   </div>
@@ -470,7 +470,7 @@ export function QuoteCard({
                   onClick={() => {
                     setExecState("idle");
                     setIsExpired(false);
-                    // In a real app we'd trigger a re-quote here
+                    // Re-triggering a re-quote is planned for the next UI iteration
                   }}
                   className="w-full py-2.5 px-4 bg-electric text-white rounded-xl text-xs font-bold hover:shadow-glow transition-all flex items-center justify-center gap-2"
                 >

@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
-import { randomUUID } from "crypto";
-import { validateAndConsumeApproval } from "../../../lib/approval-store";
 import { verifyWalletSession } from "../../../lib/privy-auth";
 import { enforceRiskPolicy, isLiveExecutionEnabled } from "../../../lib/risk-policy";
-
 import { audit } from "../../../lib/audit";
 import { checkRateLimit } from "../../../lib/rate-limit";
 

@@ -376,7 +376,7 @@ export async function runAgentLoop(
           }
           chatState = "WAITING_FOR_CONFIRMATION";
           const slippage = quoteResultData.slippage !== undefined ? Number(quoteResultData.slippage) : 2; // Default to 2% if missing
-          const approvalId = await createApproval(String(quoteResultData.toAddress), String(quoteBlockInput!.chain), Number(quoteResultData.amount), slippage, walletAddress);
+          const approvalId = await createApproval(String(quoteResultData.toAddress), String(quoteBlockInput!.chain), Number(quoteResultData.amount), slippage, walletAddress, quoteResultData.fromToken ? String(quoteResultData.fromToken) : undefined);
           pipelineData = {
             type: "quote",
             quote: quoteResultData.quote,

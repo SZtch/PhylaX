@@ -28,8 +28,8 @@ export const APPROVAL_EXPIRY_MS = 5 * 60 * 1000;
 
 import { SUPPORTED_CHAINS } from "./chains";
 
-/** Chains allowed for live execution */
-const CHAIN_ALLOWLIST = new Set(SUPPORTED_CHAINS.map((c) => c.chainIndex));
+/** Chains allowed for live execution (enabled only) */
+const CHAIN_ALLOWLIST = new Set(SUPPORTED_CHAINS.filter((c) => c.enabled).map((c) => c.chainIndex));
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

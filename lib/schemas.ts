@@ -11,7 +11,7 @@ export interface SourceMeta {
 }
 
 // P0 Phase 9: Server-side hard cap for budget — LLM output cannot exceed this
-const SERVER_HARD_CAP = Math.max(1, parseFloat(process.env.MAX_TRADE_USD_HARD_CAP || "100"));
+const SERVER_HARD_CAP = Math.max(1, parseFloat(process.env.MAX_TRADE_USD_HARD_CAP || "1"));
 
 export const ThesisIntentSchema = z.object({
   timeframe: z.string().default("1h"),

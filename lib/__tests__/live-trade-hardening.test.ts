@@ -1,7 +1,7 @@
 /**
- * PhylaX Live Demo Hardening Tests
+ * PhylaX Live Trade Hardening Tests
  *
- * Run: npx tsx lib/__tests__/live-demo-hardening.test.ts
+ * Run: npx tsx lib/__tests__/live-trade-hardening.test.ts
  */
 
 import * as fs from "fs";
@@ -23,7 +23,7 @@ function assert(condition: boolean, label: string) {
   }
 }
 
-console.log("\n🔄 Live Demo Hardening Tests\n");
+console.log("\n🔄 Live Trade Hardening Tests\n");
 
 async function runTests() {
   // 1. Live execution disabled by default
@@ -78,7 +78,7 @@ async function runTests() {
 
   const policySource = fs.readFileSync(path.join(process.cwd(), "lib/risk-policy.ts"), "utf8");
   assert(policySource.includes("const hardCap = getHardCapUsd();"), "Risk policy implements hard cap check");
-  assert(policySource.includes("exceeds the live demo hard cap"), "Risk policy has hard cap error message");
+  assert(policySource.includes("exceeds the live trade hard cap"), "Risk policy has hard cap error message");
   
   const executeSource = fs.readFileSync(path.join(process.cwd(), "app/api/execute/route.ts"), "utf8");
   assert(executeSource.includes("riskAcknowledged"), "Execute route checks for risk acknowledgement");
@@ -91,7 +91,7 @@ async function runTests() {
 
   const quoteCardSource = fs.readFileSync(path.join(process.cwd(), "components/QuoteCard.tsx"), "utf8");
   assert(quoteCardSource.includes("riskAcknowledged"), "Frontend QuoteCard enforces risk acknowledgement checkbox");
-  assert(quoteCardSource.includes("Demo Hard Cap Applies"), "Frontend QuoteCard shows hard cap notice");
+  assert(quoteCardSource.includes("Trade Hard Cap Applies"), "Frontend QuoteCard shows hard cap notice");
 
   console.log(`\n${"─".repeat(50)}`);
   console.log(`Results: ${passed} passed, ${failed} failed`);
@@ -100,7 +100,7 @@ async function runTests() {
     console.error("\n⚠️  Some tests failed!");
     process.exit(1);
   } else {
-    console.log("\n✅ All live demo hardening tests passed.");
+    console.log("\n✅ All live trade hardening tests passed.");
     process.exit(0);
   }
 }

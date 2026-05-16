@@ -83,7 +83,7 @@ async function runFlexibleTokenSwapTests() {
       to_address: "0xto",
       from_address: "0xusdc",
       from_symbol: "USDC",
-      amount: 10,
+      amount: 1,
       chain: "x-layer"
     }, testContext) as any;
     assert(!res.error && !res.blocked, "USDC -> token quote should succeed");
@@ -96,7 +96,7 @@ async function runFlexibleTokenSwapTests() {
       to_address: "0xusdc",
       from_address: "0xtokenA",
       from_symbol: "TKA",
-      amount: 10,
+      amount: 1,
       chain: "x-layer"
     }, testContext) as any;
     assert(!res.error && !res.blocked, "token -> USDC quote should succeed");
@@ -109,7 +109,7 @@ async function runFlexibleTokenSwapTests() {
       to_address: "0xtokenB",
       from_address: "0xtokenA",
       from_symbol: "TKA",
-      amount: 10,
+      amount: 1,
       chain: "x-layer"
     }, testContext) as any;
     assert(!res.error && !res.blocked, "token A -> token B quote should succeed");
@@ -120,7 +120,7 @@ async function runFlexibleTokenSwapTests() {
     // Test 4: default source token fallback
     res = await get_swap_quote.execute({
       to_address: "0xto",
-      amount: 10,
+      amount: 1,
       chain: "x-layer"
     }, testContext) as any;
     assert(!res.error && !res.blocked, "Default source token fallback quote should succeed");
@@ -131,7 +131,7 @@ async function runFlexibleTokenSwapTests() {
     // Test 5: unsupported chain blocked
     res = await get_swap_quote.execute({
       to_address: "0xto",
-      amount: 10,
+      amount: 1,
       chain: "unsupported_chain"
     }, testContext) as any;
     assert(res.blocked && res.error?.includes("Unsupported chain"), "Unsupported chain should be blocked");
@@ -141,7 +141,7 @@ async function runFlexibleTokenSwapTests() {
     // Test 6: unsupported token blocked
     res = await get_swap_quote.execute({
       to_address: "0xunsupported",
-      amount: 10,
+      amount: 1,
       chain: "x-layer"
     }, testContext) as any;
     assert(res.blocked && res.error?.includes("Unsupported token"), "Unsupported token should be blocked");
@@ -173,7 +173,7 @@ async function runFlexibleTokenSwapTests() {
     // Test 9: scan failure blocks quote
     res = await get_swap_quote.execute({
       to_address: "0xfailscan",
-      amount: 10,
+      amount: 1,
       chain: "x-layer"
     }, testContext) as any;
     assert(res.blocked, "Scan failure should block quote");
@@ -184,7 +184,7 @@ async function runFlexibleTokenSwapTests() {
     res = await get_swap_quote.execute({
       to_address: "0xto",
       from_address: "0xmedium",
-      amount: 10,
+      amount: 1,
       chain: "x-layer"
     }, testContext) as any;
     assert(res.blocked && res.error?.includes("High risk or honeypot"), "MEDIUM fromToken should block quote");
@@ -195,7 +195,7 @@ async function runFlexibleTokenSwapTests() {
     res = await get_swap_quote.execute({
       to_address: "0xmedium",
       from_address: "0xfrom",
-      amount: 10,
+      amount: 1,
       chain: "x-layer"
     }, testContext) as any;
     assert(res.blocked && res.error?.includes("High risk or honeypot"), "MEDIUM toToken should block quote");
@@ -205,7 +205,7 @@ async function runFlexibleTokenSwapTests() {
     // Test 12: executionAllowed=false blocks quote
     res = await get_swap_quote.execute({
       to_address: "0xmedium", // mock executionAllowed=false
-      amount: 10,
+      amount: 1,
       chain: "x-layer"
     }, testContext) as any;
     assert(res.blocked && res.error?.includes("High risk or honeypot"), "executionAllowed=false should block quote");
@@ -216,7 +216,7 @@ async function runFlexibleTokenSwapTests() {
     (global as any).__mockCheckBalance = async () => ({ hasSufficient: false, balance: "1", meta: {} });
     res = await get_swap_quote.execute({
       to_address: "0xto",
-      amount: 10,
+      amount: 1,
       chain: "x-layer"
     }, testContext) as any;
     assert(res.blocked && res.error?.includes("Insufficient balance"), "Insufficient balance should block quote");
@@ -227,7 +227,7 @@ async function runFlexibleTokenSwapTests() {
     (global as any).__mockCheckBalance = async () => ({ hasSufficient: true, balance: "100", meta: {} });
     res = await get_swap_quote.execute({
       to_address: "0xto",
-      amount: 10,
+      amount: 1,
       chain: "x-layer"
     }, {} as any) as any;
     assert(res.blocked && res.error?.includes("Verified wallet address is required"), "Missing wallet should block quote");

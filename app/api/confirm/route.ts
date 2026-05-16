@@ -22,6 +22,7 @@ function getRpcUrl(chainId: string): string | null {
 
   // Common public RPCs as fallback (rate-limited, not for production)
   const defaults: Record<string, string> = {
+    "196": "https://rpc.xlayer.tech", // X Layer public RPC
     "1": "https://eth.llamarpc.com",
     "8453": "https://mainnet.base.org",
     "137": "https://polygon-rpc.com",

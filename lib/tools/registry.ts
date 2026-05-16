@@ -221,7 +221,7 @@ registerTool({
     try {
       const quoteResult = await getQuotePreflight(input.to_address, amount, chain, fromAddress, fromSymbol.toUpperCase());
       
-      const SERVER_HARD_CAP = Math.max(1, parseFloat(process.env.MAX_TRADE_USD_HARD_CAP || "100"));
+      const SERVER_HARD_CAP = Math.max(1, parseFloat(process.env.MAX_TRADE_USD_HARD_CAP || "1"));
       if (quoteResult.fromAmountUsd > SERVER_HARD_CAP) {
         return {
           error: `Requested amount ($${quoteResult.fromAmountUsd.toFixed(2)}) exceeds server hard cap ($${SERVER_HARD_CAP}). Quote blocked.`,

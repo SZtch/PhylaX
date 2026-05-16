@@ -143,7 +143,7 @@ async function runTests() {
   __setAnthropicForTesting({
     messages: {
       create: async () => ({
-        content: [{ type: "text", text: '{"timeframe":"1h","maxBudgetUsd":50,"maxTokens":5,"riskMode":"degen","chain":"x-layer","fallbackChain":"base","requireSimulation":true,"requireUserApproval":true,"slippageLimitPercent":2}' }]
+        content: [{ type: "text", text: '{"timeframe":"1h","maxBudgetUsd":1,"maxTokens":5,"riskMode":"degen","chain":"x-layer","fallbackChain":"base","requireSimulation":true,"requireUserApproval":true,"slippageLimitPercent":2}' }]
       })
     }
   });
@@ -152,7 +152,7 @@ async function runTests() {
   assert(parsed.riskMode === "conservative", "parseThesis injection cannot set riskMode=degen (forced to conservative).");
 
   // Test 2.2: injection maxBudgetUsd=999999 is clamped
-  process.env.MAX_TRADE_USD_HARD_CAP = "100";
+  process.env.MAX_TRADE_USD_HARD_CAP = "1";
 
   // Need to re-import schemas to pick up new hard cap — but the Zod schema uses module-level const.
   // Instead we test parseThesis server-side clamp which happens after Zod parse.
@@ -164,15 +164,19 @@ async function runTests() {
     }
   });
 
-  parsed = await parseThesis('I want to spend $999999 with degen mode');
-  assert(parsed.maxBudgetUsd <= 100, "parseThesis clamps maxBudgetUsd to hard cap.");
+  try {
+    parsed = await parseThesis('I want to spend $999999 with degen mode');
+    assert(parsed.maxBudgetUsd <= 1, "parseThesis clamps maxBudgetUsd to hard cap.");
+  } catch (err: any) {
+    assert(err.message.includes("cannot exceed server hard cap of $1"), "parseThesis correctly rejects budget over $1 via schema.");
+  }
   assert(parsed.riskMode === "conservative", "parseThesis still forces conservative after budget injection.");
 
   // Test 2.3: "ignore previous instructions" does not alter safety parameters
   __setAnthropicForTesting({
     messages: {
       create: async () => ({
-        content: [{ type: "text", text: '{"timeframe":"1h","maxBudgetUsd":50,"maxTokens":5,"riskMode":"degen","chain":"x-layer","fallbackChain":"base","requireSimulation":false,"requireUserApproval":false,"slippageLimitPercent":2}' }]
+        content: [{ type: "text", text: '{"timeframe":"1h","maxBudgetUsd":1,"maxTokens":5,"riskMode":"degen","chain":"x-layer","fallbackChain":"base","requireSimulation":false,"requireUserApproval":false,"slippageLimitPercent":2}' }]
       })
     }
   });
@@ -308,7 +312,7 @@ async function runTests() {
   process.env.OKX_PROJECT_ID = "test";
   process.env.APPROVAL_SECRET = "test";
   process.env.NEXT_PUBLIC_PRIVY_APP_ID = "test";
-  process.env.MAX_TRADE_USD_HARD_CAP = "100";
+  process.env.MAX_TRADE_USD_HARD_CAP = "1";
   delete process.env.RPC_URL_196;
   delete process.env.RPC_URL_8453;
   delete process.env.RPC_URL_56;

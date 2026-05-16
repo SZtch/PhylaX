@@ -30,6 +30,9 @@ export function createApproval(
 }
 
 export function validateAndConsumeApproval(id: string): { valid: boolean; reason?: string; approval?: Approval } {
+  if (typeof global !== "undefined" && (global as any).__mockValidateAndConsumeApproval) {
+    return (global as any).__mockValidateAndConsumeApproval(id);
+  }
   const approval = store.get(id);
   
   if (!approval) {

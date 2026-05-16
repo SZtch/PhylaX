@@ -26,7 +26,7 @@ const DEFAULT_FROM_SYMBOL =
   process.env.OKX_DEFAULT_FROM_SYMBOL ?? "USDC";
 
 /** Map common chain name variants to their chainIndex */
-const CHAIN_MAP: Record<string, string> = {
+export const CHAIN_MAP: Record<string, string> = {
   "x-layer":  "196",
   "xlayer":   "196",
   "base":     "8453",
@@ -426,6 +426,9 @@ export async function getSwapTxData(
   fromToken = DEFAULT_FROM_TOKEN,
   slippagePercent = 1
 ): Promise<SwapBuildTxResponse> {
+  if (typeof global !== "undefined" && (global as any).__mockGetSwapTxData) {
+    return (global as any).__mockGetSwapTxData(toAddress, amountUsd, chain, walletAddress, fromToken, slippagePercent);
+  }
   const resolvedSlug = CHAIN_SLUG_MAP[CHAIN_MAP[chain.toLowerCase()] ?? CHAIN_INDEX] ?? CHAIN_SLUG;
   const readableAmount = String(amountUsd);
 

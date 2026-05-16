@@ -228,6 +228,9 @@ export async function verifySession(req: Request): Promise<AuthResult> {
  * 4. Return verified session with proven wallet address
  */
 export async function verifyWalletSession(req: Request): Promise<WalletAuthResult> {
+  if (typeof global !== "undefined" && (global as any).__mockVerifyWalletSession) {
+    return (global as any).__mockVerifyWalletSession(req);
+  }
   const accessToken = extractAccessToken(req);
   const identityToken = extractIdentityToken(req);
   const clientWalletAddress = req.headers.get("x-wallet-address");

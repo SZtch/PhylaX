@@ -59,6 +59,9 @@ export interface PolicyResult {
  * Defaults to false (simulation-only mode).
  */
 export function isLiveExecutionEnabled(): boolean {
+  if (typeof global !== "undefined" && (global as any).__mockIsLiveExecutionEnabled) {
+    return (global as any).__mockIsLiveExecutionEnabled();
+  }
   return process.env.ENABLE_LIVE_EXECUTION === "true";
 }
 
@@ -71,6 +74,9 @@ export function isLiveExecutionEnabled(): boolean {
 export async function enforceRiskPolicy(
   input: PolicyCheckInput
 ): Promise<PolicyResult> {
+  if (typeof global !== "undefined" && (global as any).__mockEnforceRiskPolicy) {
+    return (global as any).__mockEnforceRiskPolicy(input);
+  }
   // 1. Live execution must be explicitly enabled
   if (!isLiveExecutionEnabled()) {
     return {

@@ -50,27 +50,9 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { approvalId, amountUsd, quoteSnapshot, riskAcknowledged } = body as {
+    const { approvalId, riskAcknowledged } = body as {
       approvalId?: string;
-      amountUsd?: number;
       riskAcknowledged?: boolean;
-      quoteSnapshot?: {
-        chainId?: string;
-        fromToken?: string;
-        toToken?: string;
-        slippage?: number;
-        quoteCreatedAt?: number;
-        txData?: {
-          to?: string;
-          data?: string;
-          value?: string;
-          gas?: string;
-          gasLimit?: string;
-          gasPrice?: string;
-          maxFeePerGas?: string;
-          maxPriorityFeePerGas?: string;
-        };
-      };
     };
 
     // ── 2. Validate required inputs ───────────────────────────────────────
@@ -105,12 +87,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Execution wallet does not match the approval wallet." }, { status: 403 });
     }
 
-    if (amountUsd && amountUsd > approval.budgetUsd) {
-      return NextResponse.json(
-        { error: "Amount exceeds approved budget." },
-        { status: 400 }
-      );
-    }
+    // Spend amount is budgetUsd
+    const spendAmountUsd = approval.budgetUsd;
+
+    // Resolve chainIndex for risk policy and OKX API
+    const { CHAIN_MAP, getSwapTxData } = await import("../../../lib/okx");
+    const chainIndex = CHAIN_MAP[approval.chain.toLowerCase()] ?? approval.chain;
 
     // ── 4. Check if live execution is enabled ─────────────────────────────
     if (!isLiveExecutionEnabled()) {
@@ -119,14 +101,12 @@ export async function POST(req: Request) {
           txHash: null,
           status: "execution_disabled",
           requestedAddress: approval.tokenAddress,
-          requestedAmountUsd: amountUsd ?? approval.budgetUsd,
+          requestedAmountUsd: spendAmountUsd,
         },
         meta: {
           source: "execution_disabled",
           provider: "PhylaX",
-          chainIndex: process.env.OKX_CHAIN_INDEX ?? "196",
-          chainName: process.env.OKX_CHAIN_NAME ?? "X Layer",
-          chainSlug: process.env.OKX_CHAIN_SLUG ?? "xlayer",
+          chainIndex,
           timestamp: new Date().toISOString(),
         },
         message:
@@ -136,17 +116,16 @@ export async function POST(req: Request) {
     }
 
     // ── 5. Enforce risk policy ────────────────────────────────────────────
-    const chainId = quoteSnapshot?.chainId ?? process.env.OKX_CHAIN_INDEX ?? "196";
-    const slippage = quoteSnapshot?.slippage ?? approval.slippageLimitPercent;
-    const quoteCreatedAt = quoteSnapshot?.quoteCreatedAt ?? approval.createdAt;
+    const slippage = approval.slippageLimitPercent;
+    const quoteCreatedAt = approval.createdAt;
 
     const policy = await enforceRiskPolicy({
-      chainId,
+      chainId: chainIndex,
       slippagePercent: slippage,
       quoteCreatedAt,
       walletAddress: session.walletAddress,
       privyUserId: session.userId,
-      amountUsd: amountUsd ?? approval.budgetUsd,
+      amountUsd: spendAmountUsd,
     });
 
     if (!policy.allowed) {
@@ -186,32 +165,41 @@ export async function POST(req: Request) {
       metadata: { approvalId },
     });
 
-    // ── 7. Build unsigned transaction ─────────────────────────────────────
-    // The unsigned tx data comes from the OKX swap quote's tx payload.
-    // Server NEVER broadcasts — client wallet signs and submits.
-    const txData = quoteSnapshot?.txData;
-    if (!txData?.to || !txData?.data) {
+    // ── 7. Build unsigned transaction SERVER-SIDE ─────────────────────────
+    // The unsigned tx data is retrieved from OKX directly.
+    // We do NOT trust the client for txData.
+    
+    const txDataResponse = await getSwapTxData(
+      approval.tokenAddress,
+      spendAmountUsd,
+      chainIndex,
+      session.walletAddress,
+      undefined, // use default fromToken
+      slippage
+    );
+
+    if (txDataResponse.error || !txDataResponse.txData) {
       await audit({
         event: "execution_blocked",
         privyUserId: session.userId,
         walletAddress: session.walletAddress,
-        metadata: { reason: "missing_tx_data", approvalId },
+        metadata: { reason: "swap_build_failed", approvalId, detail: txDataResponse.error },
       });
       return NextResponse.json(
         {
-          error:
-            "Transaction data is missing from the quote. " +
-            "Please request a new quote with transaction data enabled.",
+          error: txDataResponse.error || "Failed to build transaction data on the server.",
         },
         { status: 400 }
       );
     }
 
+    const txData = txDataResponse.txData;
+
     const unsignedTx: UnsignedTx = {
       to: txData.to,
       data: txData.data,
       value: txData.value ?? "0x0",
-      chainId,
+      chainId: chainIndex,
       ...(txData.gas && { gas: txData.gas }),
       ...(txData.gasLimit && { gasLimit: txData.gasLimit }),
       ...(txData.gasPrice && { gasPrice: txData.gasPrice }),
@@ -248,9 +236,8 @@ export async function POST(req: Request) {
       metadata: {
         executionId,
         approvalId,
-        chainId,
+        chainId: chainIndex,
         to: unsignedTx.to,
-        // Do not log full tx data for security
       },
     });
 
@@ -258,7 +245,7 @@ export async function POST(req: Request) {
       executionId,
       unsignedTx,
       walletAddress: session.walletAddress,
-      chainId,
+      chainId: chainIndex,
       message:
         "Sign this transaction with your wallet. " +
         "PhylaX returns unsigned data only — your wallet handles signing and on-chain submission.",

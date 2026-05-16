@@ -98,8 +98,6 @@ export function QuoteCard({
         headers,
         body: JSON.stringify({
           approvalId,
-          amountUsd: quote.expectedOutputUsd,
-          quoteSnapshot: { slippage: quote.slippage, quoteCreatedAt: Date.now() },
           riskAcknowledged,
         }),
       });

@@ -1,5 +1,6 @@
 import { getSignals, scanToken, searchToken, getQuotePreflight } from "../okx";
 import { determineRiskAction } from "../risk-scoring";
+import { normalizeChain } from "../chains";
 
 export interface ToolDefinition<T = unknown> {
   name: string;
@@ -38,10 +39,14 @@ registerTool({
     required: ["chain"],
   },
   execute: async (input: { chain: string; max_tokens?: number }) => {
-    const chain = input.chain || "x-layer";
-    const maxTokens = input.max_tokens || 5;
-    const { signals, meta } = await getSignals(chain, maxTokens);
-    return { signals, meta };
+    try {
+      const chainConfig = normalizeChain(input.chain || "x-layer");
+      const maxTokens = input.max_tokens || 5;
+      const { signals, meta } = await getSignals(chainConfig.id, maxTokens);
+      return { signals, meta };
+    } catch (err: any) {
+      return { error: err.message };
+    }
   },
 });
 
@@ -59,19 +64,24 @@ registerTool({
     required: ["address", "chain"],
   },
   execute: async (input: { address: string; chain: string; risk_mode?: string }) => {
-    const scanResult = await scanToken(input.address, input.chain);
-    const riskMode = (input.risk_mode || "conservative") as "conservative" | "moderate" | "degen";
-    const action = determineRiskAction(scanResult.decision, riskMode);
-    return {
-      address: input.address,
-      chain: input.chain,
-      action,
-      riskLevel: scanResult.riskLevel,
-      isHoneypot: scanResult.isHoneypot,
-      executionAllowed: scanResult.executionAllowed,
-      triggeredLabels: scanResult.triggeredLabels,
-      meta: scanResult.meta,
-    };
+    try {
+      const chainConfig = normalizeChain(input.chain);
+      const scanResult = await scanToken(input.address, chainConfig.id);
+      const riskMode = (input.risk_mode || "conservative") as "conservative" | "moderate" | "degen";
+      const action = determineRiskAction(scanResult.decision, riskMode);
+      return {
+        address: input.address,
+        chain: chainConfig.id,
+        action,
+        riskLevel: scanResult.riskLevel,
+        isHoneypot: scanResult.isHoneypot,
+        executionAllowed: scanResult.executionAllowed,
+        triggeredLabels: scanResult.triggeredLabels,
+        meta: scanResult.meta,
+      };
+    } catch (err: any) {
+      return { error: err.message };
+    }
   },
 });
 
@@ -88,8 +98,13 @@ registerTool({
     required: ["symbol", "chain"],
   },
   execute: async (input: { symbol: string; chain: string }) => {
-    const results = await searchToken(input.symbol, input.chain === "x-layer" ? "xlayer" : input.chain);
-    return { results };
+    try {
+      const chainConfig = normalizeChain(input.chain);
+      const results = await searchToken(input.symbol, chainConfig.id);
+      return { results };
+    } catch (err: any) {
+      return { error: err.message };
+    }
   },
 });
 
@@ -110,9 +125,15 @@ registerTool({
     required: ["to_address", "amount", "chain"],
   },
   execute: async (input: { to_address: string; from_symbol?: string; amount: number; chain: string, slippage?: number, risk_mode?: string }) => {
-    const chain = input.chain;
+    let chainConfig;
+    try {
+      chainConfig = normalizeChain(input.chain);
+    } catch (err: any) {
+      return { error: err.message, blocked: true };
+    }
+    const chain = chainConfig.id;
     const amount = input.amount;
-    const fromSymbol = input.from_symbol || "USDC";
+    const fromSymbol = input.from_symbol || chainConfig.defaultFromSymbol;
 
     // Enforce scan before quote
     let scanDecision: "safe" | "high_risk" | "unknown" | "skipped" = "safe";

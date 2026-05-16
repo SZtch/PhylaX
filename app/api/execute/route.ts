@@ -96,8 +96,16 @@ export async function POST(req: Request) {
     const spendAmountUsd = approval.budgetUsd;
 
     // Resolve chainIndex for risk policy and OKX API
-    const { CHAIN_MAP, getSwapTxData } = await import("../../../lib/okx");
-    const chainIndex = CHAIN_MAP[approval.chain.toLowerCase()] ?? approval.chain;
+    const { getSwapTxData } = await import("../../../lib/okx");
+    const { normalizeChain } = await import("../../../lib/chains");
+    
+    let chainConfig;
+    try {
+      chainConfig = normalizeChain(approval.chain);
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    const chainIndex = chainConfig.chainIndex;
 
     // ── 4. Check if live execution is enabled ─────────────────────────────
     if (!isLiveExecutionEnabled()) {

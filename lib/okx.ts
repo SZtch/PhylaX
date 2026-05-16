@@ -10,44 +10,7 @@
 import { TokenSignal, SimulationResult, SourceMeta } from "./schemas";
 import { runCli, OkxCliError } from "./cli-runner";
 
-// ---------------------------------------------------------------------------
-// Chain config
-// ---------------------------------------------------------------------------
-
-const CHAIN_INDEX = process.env.OKX_CHAIN_INDEX ?? "196";
-const CHAIN_NAME  = process.env.OKX_CHAIN_NAME  ?? "X Layer";
-const CHAIN_SLUG  = process.env.OKX_CHAIN_SLUG  ?? "xlayer";
-
-/** Default from-token for swap quotes (USDC on X Layer). Not mandatory. */
-const DEFAULT_FROM_TOKEN =
-  process.env.OKX_DEFAULT_FROM_TOKEN ??
-  "0x74b7f16337b8972027f6196a17a631ac6de26d22";
-const DEFAULT_FROM_SYMBOL =
-  process.env.OKX_DEFAULT_FROM_SYMBOL ?? "USDC";
-
-/** Map common chain name variants to their chainIndex */
-export const CHAIN_MAP: Record<string, string> = {
-  "x-layer":  "196",
-  "xlayer":   "196",
-  "base":     "8453",
-  "ethereum": "1",
-  "bsc":      "56",
-  "polygon":  "137",
-  "arbitrum": "42161",
-  "solana":   "501",
-};
-
-const CHAIN_SLUG_MAP: Record<string, string> = {
-  "196":  "xlayer",
-  "8453": "base",
-  "1":    "ethereum",
-  "56":   "bsc",
-  "137":  "polygon",
-  "42161":"arbitrum",
-  "501":  "solana",
-};
-
-export { DEFAULT_FROM_TOKEN, DEFAULT_FROM_SYMBOL };
+import { normalizeChain, ChainConfig, DEFAULT_CHAIN } from "./chains";
 
 // ---------------------------------------------------------------------------
 // Config helpers
@@ -57,14 +20,15 @@ export { DEFAULT_FROM_TOKEN, DEFAULT_FROM_SYMBOL };
 // ---------------------------------------------------------------------------
 
 function sourceMeta(
-  src: SourceMeta["source"]
+  src: SourceMeta["source"],
+  chainConfig: ChainConfig
 ): SourceMeta {
   return {
     source: src,
     provider: "OKX Onchain OS",
-    chainIndex: CHAIN_INDEX,
-    chainName: CHAIN_NAME,
-    chainSlug: CHAIN_SLUG,
+    chainIndex: chainConfig.chainIndex,
+    chainName: chainConfig.name,
+    chainSlug: chainConfig.chainSlug,
     timestamp: new Date().toISOString(),
   };
 }
@@ -75,10 +39,10 @@ function sourceMeta(
 
 export class OkxRealModeError extends Error {
   public readonly meta: SourceMeta;
-  constructor(message: string) {
+  constructor(message: string, chainConfig: ChainConfig = DEFAULT_CHAIN) {
     super(message);
     this.name = "OkxRealModeError";
-    this.meta = sourceMeta("okx_real_failed");
+    this.meta = sourceMeta("okx_real_failed", chainConfig);
   }
 }
 
@@ -86,17 +50,13 @@ export class OkxRealModeError extends Error {
 // Internal helper: unwrap CLI JSON result safely
 // ---------------------------------------------------------------------------
 
-function unwrapCliResult(raw: unknown, cmdLabel: string): unknown[] {
+function unwrapCliResult(raw: unknown, cmdLabel: string, chainConfig: ChainConfig = DEFAULT_CHAIN): unknown[] {
   if (typeof raw !== "object" || raw === null) {
-    throw new OkxRealModeError(
-      `Unexpected CLI output for ${cmdLabel}`
-    );
+    throw new OkxRealModeError(`Unexpected CLI output for ${cmdLabel}`, chainConfig);
   }
   const obj = raw as Record<string, unknown>;
   if (obj.ok === false) {
-    throw new OkxRealModeError(
-      `onchainos ${cmdLabel} returned ok:false`
-    );
+    throw new OkxRealModeError(`onchainos ${cmdLabel} returned ok:false`, chainConfig);
   }
   const data = obj.data;
   if (!Array.isArray(data)) {
@@ -115,17 +75,18 @@ export interface SignalResponse {
 }
 
 export async function getSignals(
-  _chain: string,
+  chain: string,
   maxTokens: number
 ): Promise<SignalResponse> {
+  const chainConfig = normalizeChain(chain);
   try {
     const raw = await runCli([
       "signal", "list",
-      "--chain", CHAIN_INDEX,
+      "--chain", chainConfig.chainIndex,
       "--limit", String(maxTokens),
     ]);
 
-    const items = unwrapCliResult(raw, "signal list");
+    const items = unwrapCliResult(raw, "signal list", chainConfig);
 
     const signals: TokenSignal[] = items
       .slice(0, maxTokens)
@@ -143,15 +104,15 @@ export async function getSignals(
       })
       .filter((s) => s.address.length > 0);
 
-    return { signals, meta: sourceMeta("okx_real") };
+    return { signals, meta: sourceMeta("okx_real", chainConfig) };
   } catch (err) {
     if (err instanceof OkxRealModeError) throw err;
     if (err instanceof OkxCliError) {
       throw new OkxRealModeError(
-        `onchainos signal list failed: ${err.message}`
+        `onchainos signal list failed: ${err.message}`, chainConfig
       );
     }
-    throw new OkxRealModeError("Signal fetch failed");
+    throw new OkxRealModeError("Signal fetch failed", chainConfig);
   }
 }
 
@@ -167,30 +128,31 @@ export interface TokenSearchResult {
 
 export async function searchToken(
   query: string,
-  chainSlug = CHAIN_SLUG
+  chain: string
 ): Promise<TokenSearchResult[]> {
+  const chainConfig = normalizeChain(chain);
   try {
     const raw = await runCli([
       "token", "search",
       "--query", query,
-      "--chains", chainSlug,
+      "--chains", chainConfig.chainSlug,
       "--limit", "5",
     ]);
-    const items = unwrapCliResult(raw, "token search");
+    const items = unwrapCliResult(raw, "token search", chainConfig);
     return items.map((item) => {
       const it = item as Record<string, unknown>;
       return {
         symbol: String(it.symbol ?? ""),
         address: String(it.tokenContractAddress ?? it.tokenAddress ?? ""),
-        chainIndex: String(it.chainIndex ?? CHAIN_INDEX),
+        chainIndex: String(it.chainIndex ?? chainConfig.chainIndex),
       };
     });
   } catch (err) {
     if (err instanceof OkxRealModeError) throw err;
     if (err instanceof OkxCliError) {
-      throw new OkxRealModeError(`onchainos token search failed: ${err.message}`);
+      throw new OkxRealModeError(`onchainos token search failed: ${err.message}`, chainConfig);
     }
-    throw new OkxRealModeError("Token search failed");
+    throw new OkxRealModeError("Token search failed", chainConfig);
   }
 }
 
@@ -230,12 +192,12 @@ export async function scanToken(
   address: string,
   chain: string
 ): Promise<ScanResponse> {
-  const resolvedIndex = CHAIN_MAP[chain.toLowerCase()] ?? CHAIN_INDEX;
+  const chainConfig = normalizeChain(chain);
 
   try {
     const raw = await runCli([
       "security", "token-scan",
-      "--chain", resolvedIndex,
+      "--chain", chainConfig.chainIndex,
       "--address", address.toLowerCase(),
     ]);
 
@@ -251,7 +213,7 @@ export async function scanToken(
         isHoneypot: false,
         triggeredLabels: [],
         unknownReason: "OKX token scan returned no security details",
-        meta: sourceMeta("okx_real"),
+        meta: sourceMeta("okx_real", chainConfig),
       };
     }
 
@@ -275,14 +237,14 @@ export async function scanToken(
       isScanned: true,
       isHoneypot,
       triggeredLabels,
-      meta: sourceMeta("okx_real"),
+      meta: sourceMeta("okx_real", chainConfig),
     };
   } catch (err) {
     if (err instanceof OkxRealModeError) throw err;
     if (err instanceof OkxCliError) {
-      throw new OkxRealModeError(`onchainos security token-scan failed: ${err.message}`);
+      throw new OkxRealModeError(`onchainos security token-scan failed: ${err.message}`, chainConfig);
     }
-    throw new OkxRealModeError("Security scan failed");
+    throw new OkxRealModeError("Security scan failed", chainConfig);
   }
 }
 
@@ -302,27 +264,33 @@ export async function getQuotePreflight(
   toAddress: string,
   amountUsd: number,
   chain: string,
-  fromToken = DEFAULT_FROM_TOKEN,
-  fromSymbol = DEFAULT_FROM_SYMBOL
+  fromToken?: string,
+  fromSymbol?: string
 ): Promise<QuotePreflightResponse> {
-  const resolvedSlug = CHAIN_SLUG_MAP[CHAIN_MAP[chain.toLowerCase()] ?? CHAIN_INDEX] ?? CHAIN_SLUG;
+  const chainConfig = normalizeChain(chain);
+  const resolvedFromToken = fromToken || chainConfig.defaultFromToken;
+  const resolvedFromSymbol = fromSymbol || chainConfig.defaultFromSymbol;
+
+  if (typeof global !== "undefined" && (global as any).__mockGetQuotePreflightHandler) {
+    return (global as any).__mockGetQuotePreflightHandler(toAddress, amountUsd, chain, resolvedFromToken, resolvedFromSymbol);
+  }
 
   try {
     const readableAmount = String(amountUsd);
 
     const raw = await runCli([
       "swap", "quote",
-      "--from",            fromToken.toLowerCase(),
+      "--from",            resolvedFromToken.toLowerCase(),
       "--to",              toAddress.toLowerCase(),
       "--readable-amount", readableAmount,
-      "--chain",           resolvedSlug,
+      "--chain",           chainConfig.chainSlug,
     ]);
 
     const items = unwrapCliResult(raw, "swap quote");
 
     if (items.length === 0) {
       throw new OkxRealModeError(
-        "OKX swap quote returned no data — token may have no liquidity or no route available"
+        "OKX swap quote returned no data — token may have no liquidity or no route available", chainConfig
       );
     }
 
@@ -357,17 +325,17 @@ export async function getQuotePreflight(
         gasFeeUsd: gasFeeUsd ?? 0,
         route: routeName,
       },
-      fromToken,
-      fromSymbol,
+      fromToken: resolvedFromToken,
+      fromSymbol: resolvedFromSymbol,
       toSymbol,
-      meta: sourceMeta("okx_real"),
+      meta: sourceMeta("okx_real", chainConfig),
     };
   } catch (err) {
     if (err instanceof OkxRealModeError) throw err;
     if (err instanceof OkxCliError) {
-      throw new OkxRealModeError(`onchainos swap quote failed: ${err.message}`);
+      throw new OkxRealModeError(`onchainos swap quote failed: ${err.message}`, chainConfig);
     }
-    throw new OkxRealModeError("Swap quote failed");
+    throw new OkxRealModeError("Swap quote failed", chainConfig);
   }
 }
 
@@ -379,8 +347,8 @@ export async function simulateSwap(
   toAddress: string,
   amountUsd: number,
   chain: string,
-  fromToken = DEFAULT_FROM_TOKEN,
-  fromSymbol = DEFAULT_FROM_SYMBOL
+  fromToken?: string,
+  fromSymbol?: string
 ) {
   const result = await getQuotePreflight(toAddress, amountUsd, chain, fromToken, fromSymbol);
   return {
@@ -426,22 +394,25 @@ export async function getSwapTxData(
   amountUsd: number,
   chain: string,
   walletAddress: string,
-  fromToken = DEFAULT_FROM_TOKEN,
+  fromToken?: string,
   slippagePercent = 1
 ): Promise<SwapBuildTxResponse> {
+  const chainConfig = normalizeChain(chain);
+  const resolvedFromToken = fromToken || chainConfig.defaultFromToken;
+
   if (typeof global !== "undefined" && (global as any).__mockGetSwapTxData) {
-    return (global as any).__mockGetSwapTxData(toAddress, amountUsd, chain, walletAddress, fromToken, slippagePercent);
+    return (global as any).__mockGetSwapTxData(toAddress, amountUsd, chain, walletAddress, resolvedFromToken, slippagePercent);
   }
-  const resolvedSlug = CHAIN_SLUG_MAP[CHAIN_MAP[chain.toLowerCase()] ?? CHAIN_INDEX] ?? CHAIN_SLUG;
+  
   const readableAmount = String(amountUsd);
 
   try {
     const raw = await runCli([
       "swap", "swap",
-      "--from",            fromToken.toLowerCase(),
+      "--from",            resolvedFromToken.toLowerCase(),
       "--to",              toAddress.toLowerCase(),
       "--readable-amount", readableAmount,
-      "--chain",           resolvedSlug,
+      "--chain",           chainConfig.chainSlug,
       "--wallet",          walletAddress.toLowerCase(),
       "--slippage",        String(slippagePercent),
     ]);
@@ -454,7 +425,7 @@ export async function getSwapTxData(
         error:
           "OKX swap returned no data — token may have no liquidity " +
           "or no route available for this amount.",
-        meta: sourceMeta("okx_real"),
+        meta: sourceMeta("okx_real", chainConfig),
       };
     }
 
@@ -476,7 +447,7 @@ export async function getSwapTxData(
         error:
           "OKX swap response missing transaction calldata (to/data fields). " +
           "Direct OKX DEX REST API may be required.",
-        meta: sourceMeta("okx_real"),
+        meta: sourceMeta("okx_real", chainConfig),
       };
     }
 
@@ -492,14 +463,14 @@ export async function getSwapTxData(
         maxPriorityFeePerGas: maxPriorityFeePerGas ? String(maxPriorityFeePerGas) : undefined,
       },
       error: null,
-      meta: sourceMeta("okx_real"),
+      meta: sourceMeta("okx_real", chainConfig),
     };
   } catch (err) {
     if (err instanceof OkxRealModeError) {
       return {
         txData: null,
         error: err.message,
-        meta: sourceMeta("okx_real_failed"),
+        meta: sourceMeta("okx_real_failed", chainConfig),
       };
     }
     if (err instanceof OkxCliError) {
@@ -508,13 +479,13 @@ export async function getSwapTxData(
         error:
           `OKX CLI swap failed: ${err.message}. ` +
           "Check token liquidity and chain availability.",
-        meta: sourceMeta("okx_real_failed"),
+        meta: sourceMeta("okx_real_failed", chainConfig),
       };
     }
     return {
       txData: null,
       error: `Swap transaction build failed: ${err instanceof Error ? err.message : String(err)}`,
-      meta: sourceMeta("okx_real_failed"),
+      meta: sourceMeta("okx_real_failed", chainConfig),
     };
   }
 }

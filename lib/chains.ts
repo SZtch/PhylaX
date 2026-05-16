@@ -50,9 +50,18 @@ export const SUPPORTED_CHAINS: ChainConfig[] = [
     defaultFromSymbol: "USDC",
     enabled: true,
   },
+  {
+    id: "bsc",
+    name: "BSC",
+    chainIndex: "56",
+    chainSlug: "bsc",
+    iconLabel: "/assets/bsc.png",
+    defaultFromToken: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", // USDC on BSC
+    defaultFromSymbol: "USDC",
+    enabled: true,
+  },
 ];
 
-/** The default chain — always X Layer */
 export const DEFAULT_CHAIN = SUPPORTED_CHAINS[0];
 
 /** Look up a chain config by ID. Returns DEFAULT_CHAIN if not found. */
@@ -63,4 +72,27 @@ export function getChainById(id: string): ChainConfig {
 /** Look up a chain config by chainIndex. Returns DEFAULT_CHAIN if not found. */
 export function getChainByIndex(index: string): ChainConfig {
   return SUPPORTED_CHAINS.find((c) => c.chainIndex === index) ?? DEFAULT_CHAIN;
+}
+
+export function normalizeChain(input: string | undefined | null): ChainConfig {
+  if (!input) {
+    throw new Error("Chain input is missing.");
+  }
+  const clean = input.toLowerCase().trim();
+  
+  if (clean === "xlayer" || clean === "x-layer" || clean === "196") {
+    return SUPPORTED_CHAINS[0];
+  }
+  if (clean === "base" || clean === "8453") {
+    return SUPPORTED_CHAINS[1];
+  }
+  if (clean === "bsc" || clean === "binance" || clean === "56") {
+    return SUPPORTED_CHAINS[2];
+  }
+  
+  if (clean === "solana" || clean === "sol") {
+    throw new Error("Solana is not supported in the EVM execution path.");
+  }
+
+  throw new Error(`Unsupported chain: ${input}. Allowed EVM chains: X Layer, Base, BSC.`);
 }

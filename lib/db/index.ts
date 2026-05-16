@@ -18,6 +18,9 @@ let _initAttempted = false;
 let _initError: string | null = null;
 
 export function getDb() {
+  if (typeof global !== "undefined" && (global as any).__mockGetDb !== undefined) {
+    return (global as any).__mockGetDb();
+  }
   if (_db) return _db;
   if (_initAttempted) return null;
   _initAttempted = true;

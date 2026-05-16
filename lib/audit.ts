@@ -25,6 +25,7 @@ export type AuditEvent =
   | "approval_consumed"
   | "execution_requested"
   | "execution_blocked"
+  | "confirm_blocked"
   | "unsigned_tx_created"
   | "wallet_tx_submitted"
   | "tx_confirmed"

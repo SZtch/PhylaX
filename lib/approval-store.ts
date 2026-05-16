@@ -151,3 +151,83 @@ export async function validateAndConsumeApproval(id: string): Promise<{ valid: b
 
   return { valid: true, approval };
 }
+export interface ExecutionRecord {
+  id: string;
+  walletAddress: string;
+  chainId: string;
+  approvalId?: string;
+  target?: string;
+  createdAt: number;
+}
+
+const memoryExecutionStore = new Map<string, ExecutionRecord>();
+
+export async function createExecutionRecord(
+  walletAddress: string,
+  chainId: string,
+  approvalId?: string,
+  target?: string
+): Promise<string> {
+  const id = `exec-${randomUUID()}`;
+  const record: ExecutionRecord = {
+    id,
+    walletAddress: walletAddress.toLowerCase(),
+    chainId,
+    approvalId,
+    target,
+    createdAt: Date.now()
+  };
+
+  const live = isLiveExecutionEnabled();
+  const redis = getRedis();
+
+  if (live && redis) {
+    await redis.set(`phylax:exec:${id}`, JSON.stringify(record), "EX", 15 * 60); // 15 mins
+  } else {
+    memoryExecutionStore.set(id, record);
+  }
+
+  return id;
+}
+
+export const EXECUTION_RECORD_EXPIRY_MS = 15 * 60 * 1000;
+
+export async function validateExecutionRecord(id: string): Promise<{ valid: boolean; reason?: string; record?: ExecutionRecord }> {
+  if (typeof global !== "undefined" && (global as any).__mockValidateExecutionRecord) {
+    return (global as any).__mockValidateExecutionRecord(id);
+  }
+
+  const live = isLiveExecutionEnabled();
+  const redis = getRedis();
+
+  if (live && !redis) {
+    return { valid: false, reason: "Redis is required for live execution." };
+  }
+
+  let dataStr: string | null = null;
+  if (live && redis) {
+    dataStr = await redis.get(`phylax:exec:${id}`);
+  } else {
+    const rec = memoryExecutionStore.get(id);
+    if (rec) dataStr = JSON.stringify(rec);
+  }
+
+  if (!dataStr) {
+    return { valid: false, reason: "Execution record not found or expired." };
+  }
+
+  try {
+    const record = JSON.parse(dataStr) as ExecutionRecord;
+    
+    if (Date.now() - record.createdAt > EXECUTION_RECORD_EXPIRY_MS) {
+      if (!(live && redis)) {
+        memoryExecutionStore.delete(id);
+      }
+      return { valid: false, reason: "Execution record not found or expired." };
+    }
+
+    return { valid: true, record };
+  } catch {
+    return { valid: false, reason: "Invalid execution record data." };
+  }
+}

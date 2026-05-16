@@ -82,8 +82,8 @@ export async function POST(req: Request) {
       });
       history = recentMessages
         .reverse()
-        .filter(m => m.content !== message)
-        .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
+        .filter((m: { role: string; content: string }) => m.content !== message)
+        .map((m: { role: string; content: string }) => ({ role: m.role as "user" | "assistant", content: m.content }));
     } catch (err) {
       console.error("[api/chat/stream] Failed to fetch history context:", err);
     }

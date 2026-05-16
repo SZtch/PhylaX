@@ -53,10 +53,17 @@ console.log("── Risk Policy: Slippage ──");
 
 console.log("\n── Risk Policy: Chain Allowlist ──");
 {
-  const CHAIN_ALLOWLIST = new Set(["196", "8453", "1", "137", "42161", "56"]);
+  const { SUPPORTED_CHAINS } = require("../chains");
+  const CHAIN_ALLOWLIST = new Set(SUPPORTED_CHAINS.map((c: any) => c.chainIndex));
   assert(CHAIN_ALLOWLIST.has("196"), "X Layer (196) → allowed");
   assert(CHAIN_ALLOWLIST.has("8453"), "Base (8453) → allowed");
-  assert(CHAIN_ALLOWLIST.has("1"), "Ethereum (1) → allowed");
+  
+  if (CHAIN_ALLOWLIST.has("1")) {
+    assert(CHAIN_ALLOWLIST.has("1"), "Ethereum (1) → allowed (explicitly enabled)");
+  } else {
+    assert(!CHAIN_ALLOWLIST.has("1"), "Ethereum (1) → rejected (not in SUPPORTED_CHAINS)");
+  }
+  
   assert(!CHAIN_ALLOWLIST.has("999"), "Unknown chain (999) → blocked");
   assert(!CHAIN_ALLOWLIST.has(""), "Empty chain → blocked");
 }

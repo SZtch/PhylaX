@@ -101,8 +101,8 @@ export async function POST(req: Request) {
       });
       history = recentMessages
         .reverse()
-        .filter(m => m.content !== message)
-        .map(m => ({ 
+        .filter((m: { role: string; content: string }) => m.content !== message)
+        .map((m: { role: string; content: string }) => ({ 
           role: m.role as "user" | "assistant", 
           content: m.content 
         }));

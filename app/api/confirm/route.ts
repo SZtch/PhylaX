@@ -156,7 +156,40 @@ export async function POST(req: Request) {
       );
     }
 
-    const resolvedChainId = chainId ?? process.env.OKX_CHAIN_INDEX ?? "196";
+    const { validateExecutionRecord } = await import("../../../lib/approval-store");
+    const { valid, reason, record } = await validateExecutionRecord(executionId);
+    
+    if (!valid || !record) {
+      await audit({
+        event: "confirm_blocked",
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: reason || "unknown_execution", executionId, txHash },
+      });
+      return NextResponse.json({ error: reason || "Invalid or expired execution ID." }, { status: 403 });
+    }
+
+    if (record.walletAddress !== session.walletAddress.toLowerCase()) {
+      await audit({
+        event: "confirm_blocked",
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: "wallet_mismatch", executionId, txHash },
+      });
+      return NextResponse.json({ error: "Execution wallet does not match the confirm wallet." }, { status: 403 });
+    }
+
+    const resolvedChainId = chainId ?? record.chainId;
+    
+    if (resolvedChainId !== record.chainId) {
+      await audit({
+        event: "confirm_blocked",
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: "chain_mismatch", executionId, txHash, expected: record.chainId, received: resolvedChainId },
+      });
+      return NextResponse.json({ error: "Execution chain does not match the confirm chain." }, { status: 403 });
+    }
 
     await audit({
       event: "wallet_tx_submitted",

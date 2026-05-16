@@ -223,7 +223,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const executionId = `exec-${randomUUID()}`;
+    const { createExecutionRecord } = await import("../../../lib/approval-store");
+    const executionId = await createExecutionRecord(
+      session.walletAddress,
+      chainIndex,
+      approvalId,
+      unsignedTx.to
+    );
 
     await audit({
       event: "unsigned_tx_created",

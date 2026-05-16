@@ -26,15 +26,10 @@ export const QUOTE_EXPIRY_MS = 2 * 60 * 1000;
 /** Approval expiry duration in milliseconds (5 minutes) */
 export const APPROVAL_EXPIRY_MS = 5 * 60 * 1000;
 
+import { SUPPORTED_CHAINS } from "./chains";
+
 /** Chains allowed for live execution */
-const CHAIN_ALLOWLIST = new Set([
-  "196",   // X Layer
-  "8453",  // Base
-  "1",     // Ethereum mainnet
-  "137",   // Polygon
-  "42161", // Arbitrum One
-  "56",    // BSC
-]);
+const CHAIN_ALLOWLIST = new Set(SUPPORTED_CHAINS.map((c) => c.chainIndex));
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

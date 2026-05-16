@@ -81,7 +81,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: guardrails.reason }, { status: 400 });
     }
 
-    const approvalId = createApproval(address, chain, maxBudgetUsd, slippageLimitPercent, session.walletAddress);
+    const approvalId = await createApproval(address, chain, maxBudgetUsd, slippageLimitPercent, session.walletAddress);
 
     return NextResponse.json({ simulation, fromToken, fromSymbol, approvalId, meta });
   } catch (err) {

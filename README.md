@@ -3,6 +3,7 @@
 <div align="center">
   <img src="public/hero.jpg" alt="PhylaX - Trade, Scan, Execute" width="100%" />
 </div>
+
 > 🛡️ **Intent-based DeFi agent that scans tokens for risk, gets optimal swap quotes, and builds safe unsigned transactions on X Layer.**
 > *Powered by OKX Agentic OS. Your wallet always signs.*
 

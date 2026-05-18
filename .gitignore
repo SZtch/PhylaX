@@ -79,3 +79,7 @@ node_modules
 # test artifacts
 chat-body.json
 lint-output.txt
+
+# backups and archives
+.patch-backup/
+*.zip

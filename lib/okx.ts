@@ -134,6 +134,24 @@ export async function searchToken(
     return (global as any).__mockSearchTokenHandler(query, chain);
   }
   const chainConfig = normalizeChain(chain);
+
+  // ── Shortcut: well-known X Layer tokens never need CLI lookup ──────────
+  const KNOWN_XLAYER: Record<string, string> = {
+    OKB:  "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    USDC: "0x74b7f16337b8972027f6196a17a631ac6de26d22",
+    USDT: "0x1e4a5963abfd975d8c9021ce480b42188849d41d",
+    WETH: "0x5a77f1443d16ee5761d310e38b62f77f726bc71c",
+    WBTC: "0x8f8526dbfd6e38e3d8307702ca8469bae6c56c15",
+  };
+  const upper = query.toUpperCase().trim();
+  if (chainConfig.id === "x-layer" && KNOWN_XLAYER[upper]) {
+    return [{
+      symbol: upper,
+      address: KNOWN_XLAYER[upper],
+      chainIndex: chainConfig.chainIndex,
+    }];
+  }
+
   try {
     const raw = await runCli([
       "token", "search",
@@ -197,15 +215,34 @@ export async function scanToken(
 ): Promise<ScanResponse> {
   const chainConfig = normalizeChain(chain);
 
-  if (typeof global !== "undefined" && (global as any).__mockScanTokenHandler) {
-    return (global as any).__mockScanTokenHandler(address, chain);
+  const lowerAddress = address ? address.toLowerCase() : "";
+
+  // Native tokens and verified stablecoins (USDC/USDT) do not need security scanning
+  const trustedAddresses = [
+    "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", // Native
+    "0x74b7f16337b8972027f6196a17a631ac6de26d22", // USDC X Layer
+    "0x1e4a5963abfd975d8c9021ce480b42188849d41d", // USDT X Layer
+    "0x5a77f1443d16ee5761d310e38b62f77f726bc71c", // WETH X Layer
+    "0x8f8526dbfd6e38e3d8307702ca8469bae6c56c15"  // WBTC X Layer
+  ];
+
+  if (!address || trustedAddresses.includes(lowerAddress)) {
+    return {
+      riskLevel: "LOW",
+      decision: "safe",
+      executionAllowed: true,
+      isScanned: true,
+      isHoneypot: false,
+      triggeredLabels: [],
+      meta: sourceMeta("okx_real", chainConfig),
+    };
   }
 
   try {
     const raw = await runCli([
       "security", "token-scan",
       "--chain", chainConfig.chainIndex,
-      "--address", address.toLowerCase(),
+      "--address", lowerAddress,
     ]);
 
     const items = unwrapCliResult(raw, "security token-scan");
@@ -303,10 +340,13 @@ export async function getQuotePreflight(
     }
 
     const quote = items[0] as Record<string, unknown>;
-
+    const txNode = (quote.tx ?? {}) as Record<string, unknown>;
+    
+    // Slippage / Price Impact
     const priceImpact = parseFloat(
-      String(quote.priceImpactPercentage ?? quote.price_impact_percentage ?? "0")
+      String(quote.priceImpactPercent ?? quote.priceImpactPercentage ?? quote.price_impact_percentage ?? quote.priceImpact ?? quote.price_impact ?? txNode.priceImpactPercentage ?? "0")
     );
+
     const toAmountRaw = parseFloat(String(quote.toTokenAmount ?? quote.to_token_amount ?? "0"));
     const toToken = (quote.toToken ?? quote.to_token ?? {}) as Record<string, unknown>;
     const toSymbol = String(toToken.tokenSymbol ?? toToken.symbol ?? "UNKNOWN");
@@ -333,16 +373,81 @@ export async function getQuotePreflight(
     }
     const fromAmountUsd = amount * fromUnitPrice;
 
-    const gasLimit = parseFloat(String(quote.estimatedGas ?? quote.estimated_gas ?? "0"));
-    const gasPriceWei = parseFloat(String(quote.gasPrice ?? quote.gas_price ?? "0"));
-    const gasFeeUsd = gasPriceWei > 0 && gasLimit > 0
-      ? (gasLimit * gasPriceWei * 1e-18) * parseFloat(String(quote.nativeTokenPrice ?? "2000"))
-      : undefined;
+    // Gas Fee Calculation with Auto-Detection of Units (Wei, Gwei, Native)
+    let gasFeeUsd = undefined;
+    
+    let nativePrice = parseFloat(String(quote.nativeTokenPrice ?? "0"));
+    if (!nativePrice || isNaN(nativePrice)) {
+      try {
+        const cgRes = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=okb&vs_currencies=usd");
+        if (cgRes.ok) {
+          const cgData = await cgRes.json();
+          if (cgData?.okb?.usd) nativePrice = cgData.okb.usd;
+        }
+      } catch { /* */ }
+    }
+    if (!nativePrice || isNaN(nativePrice)) {
+      nativePrice = chainConfig.nativeFallbackPrice;
+    }
+    
+    // Strategy 1: Direct estimateGasFee (often in Wei, Gwei, or Native)
+    if (quote.estimateGasFee || quote.estimatedGasFee) {
+        const rawGasFee = parseFloat(String(quote.estimateGasFee ?? quote.estimatedGasFee));
+        console.log(`[gas-debug] rawGasFee=${rawGasFee}, nativePrice=${nativePrice}, chain=${chainConfig.id}`);
+        if (!isNaN(rawGasFee) && rawGasFee > 0) {
+            let gasFeeNative = rawGasFee;
+            if (rawGasFee > 1e12) {
+                // Returned in Wei (convert to native: divide by 1e18)
+                gasFeeNative = rawGasFee * 1e-18;
+                console.log(`[gas-debug] detected Wei → native=${gasFeeNative}`);
+            } else if (rawGasFee > 1e5) {
+                // Returned in Gwei (convert to native: divide by 1e9)
+                gasFeeNative = rawGasFee * 1e-9;
+                console.log(`[gas-debug] detected Gwei → native=${gasFeeNative}`);
+            } else {
+                // Small number — likely already in native token units
+                console.log(`[gas-debug] assumed native units → native=${gasFeeNative}`);
+            }
+            gasFeeUsd = gasFeeNative * nativePrice;
+            console.log(`[gas-debug] gasFeeUsd=${gasFeeUsd}`);
+            
+            // Sanity cap: X Layer gas should never exceed ~$0.10 for a swap
+            // If it's unreasonably high, something went wrong with unit detection
+            if (chainConfig.id === "x-layer" && gasFeeUsd > 0.10) {
+                console.warn(`[gas-debug] WARNING: gasFeeUsd=${gasFeeUsd} is too high for X Layer (0.1 gwei). Capping.`);
+                // Recalculate assuming raw was in Wei regardless
+                gasFeeUsd = (rawGasFee * 1e-18) * nativePrice;
+                if (gasFeeUsd > 0.10) gasFeeUsd = 0.005; // Hard fallback for X Layer
+                console.log(`[gas-debug] corrected gasFeeUsd=${gasFeeUsd}`);
+            }
+        }
+    }
+    
+    // Strategy 2: Calculate from gasLimit and gasPrice
+    if (gasFeeUsd === undefined) {
+        const gasLimit = parseFloat(String(quote.estimatedGas ?? quote.estimated_gas ?? txNode.gasLimit ?? txNode.gas ?? "0"));
+        const rawGasPrice = parseFloat(String(quote.gasPrice ?? quote.gas_price ?? txNode.gasPrice ?? "0"));
+        if (rawGasPrice > 0 && gasLimit > 0) {
+          let gasPriceWei = rawGasPrice;
+          if (rawGasPrice > 0 && rawGasPrice < 1e6) {
+              // Returned in Gwei (convert to Wei)
+              gasPriceWei = rawGasPrice * 1e9;
+          }
+          gasFeeUsd = (gasLimit * gasPriceWei * 1e-18) * nativePrice;
+        }
+    }
 
     const compareList = quote.quoteCompareList ?? quote.quote_compare_list;
-    const routeName = Array.isArray(compareList) && compareList.length > 0
-      ? String((compareList[0] as Record<string, unknown>).dexName ?? "OKX DEX Aggregator")
-      : "OKX DEX Aggregator";
+    const routerList = quote.dexRouterList;
+    let routeName = "OKX DEX Aggregator";
+    if (Array.isArray(compareList) && compareList.length > 0) {
+      routeName = String((compareList[0] as Record<string, unknown>).dexName ?? "OKX DEX Aggregator");
+    } else if (Array.isArray(routerList) && routerList.length > 0) {
+      const firstProtocol = (routerList[0] as Record<string, unknown>).dexProtocol as Record<string, unknown> | undefined;
+      if (firstProtocol?.dexName) {
+        routeName = String(firstProtocol.dexName);
+      }
+    }
 
     return {
       quote: {
@@ -464,9 +569,9 @@ export async function getSwapTxData(
     // Extract the tx fields from OKX response
     const to = String(tx.to ?? nested.to ?? "");
     const data = String(tx.data ?? nested.data ?? "");
-    const value = String(tx.value ?? nested.value ?? "0x0");
+    const rawValue = String(tx.value ?? nested.value ?? "0");
     const gas = tx.gas ?? tx.gasLimit ?? nested.gas ?? nested.gasLimit;
-    const gasPrice = tx.gasPrice ?? nested.gasPrice;
+    let gasPrice = tx.gasPrice ?? nested.gasPrice;
     const maxFeePerGas = tx.maxFeePerGas ?? nested.maxFeePerGas;
     const maxPriorityFeePerGas = tx.maxPriorityFeePerGas ?? nested.maxPriorityFeePerGas;
 
@@ -480,16 +585,59 @@ export async function getSwapTxData(
       };
     }
 
+    // eth_sendTransaction requires ALL numeric fields as hex (0x...) strings.
+    // OKX CLI may return them as decimal strings or BigInt-like values.
+    const toHexBigInt = (v: unknown): string | undefined => {
+      if (v === undefined || v === null) return undefined;
+      const s = String(v).trim();
+      if (s === "" || s === "0") return "0x0";
+      if (s.startsWith("0x")) return s; // already hex
+      try {
+        // Use BigInt to handle arbitrarily large wei values safely
+        const n = BigInt(s);
+        return "0x" + n.toString(16);
+      } catch {
+        // If it's a float/scientific notation, try parseInt as fallback
+        const n = parseInt(s, 10);
+        if (isNaN(n) || n < 0) return undefined;
+        return "0x" + n.toString(16);
+      }
+    };
+
+    // Ensure value is hex-encoded (critical for native token swaps like OKB → USDC)
+    const hexValue = toHexBigInt(rawValue) ?? "0x0";
+
+    // If gasPrice is missing, fetch from the chain RPC.
+    // Without gasPrice, wallets show "insufficient balance for network fees"
+    // because they cannot estimate the total fee.
+    if (!gasPrice && !maxFeePerGas) {
+      try {
+        const { createPublicClient, http } = await import("viem");
+        const rpcUrl = chainConfig.id === "x-layer" ? "https://rpc.xlayer.tech" : undefined;
+        if (rpcUrl) {
+          const client = createPublicClient({ transport: http(rpcUrl) });
+          const fetchedGasPrice = await client.getGasPrice();
+          gasPrice = fetchedGasPrice.toString();
+          console.log(`[swap-tx] gasPrice fetched from RPC: ${gasPrice}`);
+        }
+      } catch (rpcErr) {
+        console.warn("[swap-tx] Failed to fetch gasPrice from RPC:", rpcErr);
+      }
+    }
+
+    console.log(`[swap-tx] raw fields: value=${rawValue}, gas=${String(gas)}, gasPrice=${String(gasPrice)}, maxFeePerGas=${String(maxFeePerGas)}`);
+    console.log(`[swap-tx] hex fields: value=${hexValue}, gas=${toHexBigInt(gas)}, gasPrice=${toHexBigInt(gasPrice)}, maxFeePerGas=${toHexBigInt(maxFeePerGas)}`);
+
     return {
       txData: {
         to,
         data,
-        value,
-        gas: gas ? String(gas) : undefined,
-        gasLimit: gas ? String(gas) : undefined,
-        gasPrice: gasPrice ? String(gasPrice) : undefined,
-        maxFeePerGas: maxFeePerGas ? String(maxFeePerGas) : undefined,
-        maxPriorityFeePerGas: maxPriorityFeePerGas ? String(maxPriorityFeePerGas) : undefined,
+        value: hexValue,
+        gas: toHexBigInt(gas),
+        gasLimit: toHexBigInt(gas),
+        gasPrice: toHexBigInt(gasPrice),
+        maxFeePerGas: toHexBigInt(maxFeePerGas),
+        maxPriorityFeePerGas: toHexBigInt(maxPriorityFeePerGas),
       },
       error: null,
       meta: sourceMeta("okx_real", chainConfig),
@@ -600,36 +748,51 @@ export async function checkBalance(
   const chainConfig = normalizeChain(chain);
 
   // Native token is passed as empty address, so for OKX portfolio we use just "chainIndex:"
-  const resolvedToken = tokenAddress ? tokenAddress.toLowerCase() : "";
+  const isNativeToken = !tokenAddress || tokenAddress.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+  const resolvedToken = isNativeToken ? "" : tokenAddress.toLowerCase();
   const tokenArg = `${chainConfig.chainIndex}:${resolvedToken}`;
 
   try {
-    const raw = await runCli([
-      "portfolio", "token-balances",
-      "--address", walletAddress.toLowerCase(),
-      "--tokens", tokenArg
-    ]);
-    const items = unwrapCliResult(raw, "portfolio token-balances");
-    if (items.length === 0) {
-      return { hasSufficient: false, balance: "0", meta: sourceMeta("okx_real", chainConfig) };
-    }
-    const result = items[0] as Record<string, unknown>;
-    const balanceStr = String(result.balance ?? result.amount ?? "0");
-    const decimalsRaw = result.decimal ?? result.decimals;
-    
+    let balanceStr = "0";
     let decimals = 18;
-    const isNative = !tokenAddress || tokenAddress.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-    
-    if (decimalsRaw !== undefined) {
-      decimals = parseInt(String(decimalsRaw), 10);
-    } else if (!isNative) {
-      return { hasSufficient: false, balance: "0", meta: sourceMeta("okx_real_failed", chainConfig) }; // Missing decimals blocks quote
-    }
 
+    if (isNativeToken) {
+      // Use viem for native token balance
+      const { createPublicClient, http, formatUnits } = await import("viem");
+      const client = createPublicClient({ transport: http("https://rpc.xlayer.tech") });
+      const bal = await client.getBalance({ address: walletAddress as `0x${string}` });
+      balanceStr = formatUnits(bal, 18);
+    } else {
+      const raw = await runCli([
+        "portfolio", "token-balances",
+        "--address", walletAddress.toLowerCase(),
+        "--tokens", tokenArg
+      ]);
+      const items = unwrapCliResult(raw, "portfolio token-balances");
+      if (items.length > 0) {
+        const item = items[0] as Record<string, unknown>;
+        const assets = Array.isArray(item.tokenAssets) ? item.tokenAssets : [item];
+        if (assets.length > 0) {
+          const asset = assets[0] as Record<string, unknown>;
+          balanceStr = String(asset.balance ?? asset.amount ?? "0");
+          const decimalsRaw = asset.decimal ?? asset.decimals ?? item.decimal ?? item.decimals;
+          if (decimalsRaw !== undefined) {
+            decimals = parseInt(String(decimalsRaw), 10);
+          }
+        }
+      } else {
+         return { hasSufficient: false, balance: "0", meta: sourceMeta("okx_real", chainConfig) };
+      }
+    }
     let hasSufficient = false;
     try {
       const balanceMinimal = toMinimalUnits(balanceStr, decimals);
-      const neededMinimal = toMinimalUnits(readableAmount, decimals);
+      // Reserve gas buffer for native token swaps (0.001 native ≈ ~$0.08 on X Layer)
+      const GAS_BUFFER_NATIVE = 0.001;
+      const effectiveAmount = isNativeToken
+        ? Number(readableAmount) + GAS_BUFFER_NATIVE
+        : Number(readableAmount);
+      const neededMinimal = toMinimalUnits(effectiveAmount, decimals);
       hasSufficient = BigInt(balanceMinimal) >= BigInt(neededMinimal);
     } catch {
       hasSufficient = false;
@@ -680,15 +843,47 @@ export async function getApproveTxData(
     }
     const result = items[0] as Record<string, unknown>;
     const tx = (result.tx ?? result) as Record<string, unknown>;
+
+    // Same BigInt-safe hex encoder as getSwapTxData
+    const toHexBigInt = (v: unknown): string | undefined => {
+      if (v === undefined || v === null) return undefined;
+      const s = String(v).trim();
+      if (s === "" || s === "0") return "0x0";
+      if (s.startsWith("0x")) return s;
+      try {
+        const n = BigInt(s);
+        return "0x" + n.toString(16);
+      } catch {
+        const n = parseInt(s, 10);
+        if (isNaN(n) || n < 0) return undefined;
+        return "0x" + n.toString(16);
+      }
+    };
+
+    // If gasPrice is missing, fetch from chain RPC
+    let gasPrice = tx.gasPrice;
+    if (!gasPrice) {
+      try {
+        const { createPublicClient, http } = await import("viem");
+        const rpcUrl = chainConfig.id === "x-layer" ? "https://rpc.xlayer.tech" : undefined;
+        if (rpcUrl) {
+          const client = createPublicClient({ transport: http(rpcUrl) });
+          const fetchedGasPrice = await client.getGasPrice();
+          gasPrice = fetchedGasPrice.toString();
+        }
+      } catch {}
+    }
+
+    const rawValue = String(tx.value ?? "0");
     
     return {
       txData: {
         to: String(tx.to ?? ""),
         data: String(tx.data ?? ""),
-        value: String(tx.value ?? "0x0"),
-        gas: tx.gas ? String(tx.gas) : undefined,
-        gasLimit: tx.gasLimit ? String(tx.gasLimit) : undefined,
-        gasPrice: tx.gasPrice ? String(tx.gasPrice) : undefined,
+        value: toHexBigInt(rawValue) ?? "0x0",
+        gas: toHexBigInt(tx.gas),
+        gasLimit: toHexBigInt(tx.gasLimit ?? tx.gas),
+        gasPrice: toHexBigInt(gasPrice),
       },
       error: null,
       meta: sourceMeta("okx_real", chainConfig)
@@ -705,15 +900,32 @@ export async function getApproveTxData(
 export async function getTokenDecimals(chain: string, tokenAddress: string): Promise<number> {
   const chainConfig = normalizeChain(chain);
   if (!tokenAddress || tokenAddress === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") return 18;
-  const tokenArg = `${chainConfig.chainIndex}:${tokenAddress.toLowerCase()}`;
+
+  // Hardcoded fallbacks for well-known X Layer tokens
+  const KNOWN_DECIMALS: Record<string, number> = {
+    "0x74b7f16337b8972027f6196a17a631ac6de26d22": 6,  // USDC
+    "0x1e4a5963abfd975d8c9021ce480b42188849d41d": 6,  // USDT
+    "0x5a77f1443d16ee5761d310e38b62f77f726bc71c": 18, // WETH
+    "0x8f8526dbfd6e38e3d8307702ca8469bae6c56c15": 8,  // WBTC
+  };
+  const knownDecimals = KNOWN_DECIMALS[tokenAddress.toLowerCase()];
+
   try {
-    const priceRaw = await runCli(["market", "price-info", "--tokens", tokenArg]);
-    const items = unwrapCliResult(priceRaw, "market price-info", chainConfig);
+    const priceRaw = await runCli([
+      "market", "price",
+      "--chain", chainConfig.chainSlug,
+      "--address", tokenAddress.toLowerCase(),
+    ]);
+    const items = unwrapCliResult(priceRaw, "market price", chainConfig);
     if (items.length > 0) {
       const info = items[0] as Record<string, unknown>;
       const decimals = info.decimal ?? info.decimals;
       if (decimals !== undefined) return parseInt(String(decimals), 10);
     }
   } catch {}
+
+  // Use hardcoded fallback if CLI failed
+  if (knownDecimals !== undefined) return knownDecimals;
+
   throw new OkxRealModeError(`Unable to determine decimals for token ${tokenAddress} on ${chain}.`, chainConfig);
 }

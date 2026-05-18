@@ -13,6 +13,20 @@ import {
   getAccessToken,
 } from "@privy-io/react-auth";
 
+const xLayerChain = {
+  id: 196,
+  network: "x-layer",
+  name: "X Layer",
+  nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://rpc.xlayer.tech"] },
+    public: { http: ["https://rpc.xlayer.tech"] },
+  },
+  blockExplorers: {
+    default: { name: "OKLink", url: "https://www.oklink.com/xlayer" },
+  },
+};
+
 // ─── Resolve getIdentityToken at module level (not during render) ─────────────
 
 let _getIdentityToken: (() => Promise<string | null>) | null = null;
@@ -147,6 +161,8 @@ export function PrivyProviderWrapper({ children }: { children: ReactNode }) {
           accentColor: "#4F46E5",
         },
         loginMethods: ["wallet", "email"],
+        defaultChain: xLayerChain,
+        supportedChains: [xLayerChain],
         embeddedWallets: {
           ethereum: {
             createOnLogin: "users-without-wallets",

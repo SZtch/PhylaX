@@ -28,7 +28,7 @@ const features: Feature[] = [
   },
   {
     title: "AI Intelligence",
-    desc: "AI-assisted market interpretation and signal verification across multi-chain liquidity.",
+    desc: "AI-assisted market interpretation and signal verification across X Layer liquidity.",
     icon: BrainCircuit,
     accent: "oklch(0.78 0.12 220)",
   },

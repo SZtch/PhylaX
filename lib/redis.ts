@@ -36,7 +36,8 @@ export function getRedis(): Redis | null {
   try {
     _redis = new Redis(url, {
       maxRetriesPerRequest: 3,
-      lazyConnect: true,
+      lazyConnect: false,
+      tls: url.startsWith("rediss://") ? { rejectUnauthorized: false } : undefined,
       retryStrategy(times) {
         if (times > 5) return null;
         return Math.min(times * 200, 2000);

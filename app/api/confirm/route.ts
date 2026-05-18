@@ -72,49 +72,64 @@ export async function checkTxOnchain(
   }
 
   try {
-    const [txRes, rcptRes] = await Promise.all([
-      fetch(rpcUrl, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getTransactionByHash", params: [txHash], id: 1 })
-      }),
-      fetch(rpcUrl, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getTransactionReceipt", params: [txHash], id: 2 })
-      })
-    ]);
+    // Try with 1 retry (3s delay) for RPC resilience
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const [txRes, rcptRes] = await Promise.all([
+          fetch(rpcUrl, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getTransactionByHash", params: [txHash], id: 1 }),
+            signal: AbortSignal.timeout(10000),
+          }),
+          fetch(rpcUrl, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getTransactionReceipt", params: [txHash], id: 2 }),
+            signal: AbortSignal.timeout(10000),
+          })
+        ]);
 
-    const txData = await txRes.json() as any;
-    const rcptData = await rcptRes.json() as any;
+        const txData = await txRes.json() as any;
+        const rcptData = await rcptRes.json() as any;
 
-    if (!txData.result) {
-      if (!txData.error) {
-        return { status: "not_found", explorerUrl };
+        if (!txData.result) {
+          if (!txData.error) {
+            return { status: "not_found", explorerUrl };
+          }
+          return { status: "pending", explorerUrl };
+        }
+
+        const tx = txData.result;
+        const from = tx.from;
+        const to = tx.to;
+        const hash = tx.hash;
+        const input = tx.input;
+
+        if (!rcptData.result) {
+          return { status: "pending", explorerUrl, from, to, hash, input };
+        }
+
+        const receipt = rcptData.result;
+        const statusHex = receipt.status;
+        const blockNumber = receipt.blockNumber ? parseInt(receipt.blockNumber, 16) : undefined;
+        const gasUsed = receipt.gasUsed ? parseInt(receipt.gasUsed, 16).toString() : undefined;
+
+        if (statusHex === "0x1") {
+          return { status: "confirmed", blockNumber, gasUsed, explorerUrl, from, to, hash, input };
+        } else if (statusHex === "0x0") {
+          return { status: "reverted", blockNumber, gasUsed, explorerUrl, from, to, hash, input };
+        } else {
+          return { status: "failed", blockNumber, gasUsed, explorerUrl, from, to, hash, input };
+        }
+      } catch (e) {
+        lastError = e;
+        if (attempt === 0) {
+          await new Promise(r => setTimeout(r, 3000)); // Wait 3s before retry
+        }
       }
-      return { status: "pending", explorerUrl };
     }
-
-    const tx = txData.result;
-    const from = tx.from;
-    const to = tx.to;
-    const hash = tx.hash;
-    const input = tx.input;
-
-    if (!rcptData.result) {
-      return { status: "pending", explorerUrl, from, to, hash, input };
-    }
-
-    const receipt = rcptData.result;
-    const statusHex = receipt.status;
-    const blockNumber = receipt.blockNumber ? parseInt(receipt.blockNumber, 16) : undefined;
-    const gasUsed = receipt.gasUsed ? parseInt(receipt.gasUsed, 16).toString() : undefined;
-
-    if (statusHex === "0x1") {
-      return { status: "confirmed", blockNumber, gasUsed, explorerUrl, from, to, hash, input };
-    } else if (statusHex === "0x0") {
-      return { status: "reverted", blockNumber, gasUsed, explorerUrl, from, to, hash, input };
-    } else {
-      return { status: "failed", blockNumber, gasUsed, explorerUrl, from, to, hash, input };
-    }
+    console.error(`[confirm] RPC check failed for ${txHash} after retries:`, lastError);
+    return { status: "pending", explorerUrl };
   } catch (err) {
     console.error(`[confirm] RPC check failed for ${txHash}:`, err);
     return { status: "pending", explorerUrl };
@@ -138,6 +153,12 @@ export async function POST(req: Request) {
   }
 
   const session = auth.session!;
+
+  // Per-user rate limit post-auth
+  const userAllowed = await checkRateLimit(`confirm:user:${session.userId}`, 10, 60);
+  if (!userAllowed) {
+    return NextResponse.json({ error: "Too many confirmation requests. Please wait before trying again." }, { status: 429 });
+  }
 
   try {
     const body = await req.json();
@@ -280,6 +301,16 @@ export async function POST(req: Request) {
         metadata: { reason: "target_mismatch", executionId, txHash, expected: record.target, actual: onchainData.to },
       });
       return NextResponse.json({ error: "Transaction target does not match authorized router." }, { status: 403 });
+    }
+
+    if (onchainData.status === "pending") {
+      return NextResponse.json({
+        executionId,
+        txHash,
+        status: onchainData.status,
+        explorerUrl: onchainData.explorerUrl ?? null,
+        walletAddress: session.walletAddress,
+      });
     }
 
     // Attempt to consume the execution record for one-time use

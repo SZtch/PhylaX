@@ -51,7 +51,7 @@ _reference/
 .env.local
 .env*.local
 
-.agents/
+
 .cursor/
 .cursor-plugin/
 CLAUDE.md
@@ -75,3 +75,7 @@ ngrok.yml
 # build/deps
 .next
 node_modules
+
+# test artifacts
+chat-body.json
+lint-output.txt

@@ -101,7 +101,7 @@ export function RiskPanel({ tokens, maxBudgetUsd, fromSymbol, walletConnected }:
           <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <p className="leading-relaxed">
             {safe > 0
-              ? `${safe} token${safe > 1 ? "s" : ""} passed security scan and can be simulated. Live execution is disabled for this MVP.`
+              ? `${safe} token${safe > 1 ? "s" : ""} passed security scan and ${process.env.NEXT_PUBLIC_ENABLE_LIVE_EXECUTION === "true" ? "ready for live execution." : "ready to simulate."}`
               : total > 0
               ? "No tokens passed security scan. Check risk details in the trade plan."
               : "Waiting for signal discovery and security scan to complete."

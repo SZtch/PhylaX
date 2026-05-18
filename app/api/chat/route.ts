@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
   }
 
-  // ── 2. Parse request body ───────────────────────────────────────────────
+  // ── 1. Parse request body ───────────────────────────────────────────────
   let body: { conversationId?: string; message?: string; chain?: string };
   try {
     body = await req.json();
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "conversationId is required." }, { status: 400 });
   }
 
-  // ── 1. Verify user session ───────────────────
+  // ── 2. Verify user session ───────────────────
   const auth = await verifySession(req);
   if (!auth.authenticated || !auth.session) {
     return NextResponse.json(
@@ -46,69 +46,89 @@ export async function POST(req: Request) {
     );
   }
 
-  const db = getDb();
-
-  // ── 3. Persist User Message & Update Title ──────────────────────────────
-  if (db) {
-    try {
-      const conversation = await db.query.conversations.findFirst({
-        where: and(
-          eq(schema.conversations.id, conversationId),
-          eq(schema.conversations.privyUserId, auth.session.userId)
-        ),
-      });
-
-      if (!conversation) {
-        return NextResponse.json({ error: "Conversation not found or unauthorized" }, { status: 404 });
-      }
-
-      await db.insert(schema.messages).values({
-        conversationId,
-        role: "user",
-        content: message,
-      });
-
-      const [msgCount] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(schema.messages)
-        .where(eq(schema.messages.conversationId, conversationId));
-
-      if (Number(msgCount.count) <= 1) {
-        const title = message.length > 40 ? message.slice(0, 37) + "..." : message;
-        await db
-          .update(schema.conversations)
-          .set({ title, updatedAt: new Date() })
-          .where(eq(schema.conversations.id, conversationId));
-      } else {
-        await db
-          .update(schema.conversations)
-          .set({ updatedAt: new Date() })
-          .where(eq(schema.conversations.id, conversationId));
-      }
-    } catch (err) {
-      console.error("[api/chat] Failed to persist user message:", err);
-    }
+  // Per-user rate limit post-auth (IP limit alone is spoofable via proxy)
+  const userAllowed = await checkRateLimit(`chat:user:${auth.session.userId}`, 20, 60);
+  if (!userAllowed) {
+    return NextResponse.json({ error: "Too many requests. Please wait before sending another message." }, { status: 429 });
   }
 
-  // ── 4. Retrieve History ───────────────────────────────────────────
-  let history: { role: "user" | "assistant"; content: string }[] = [];
-  if (db) {
-    try {
-      const recentMessages = await db.query.messages.findMany({
-        where: eq(schema.messages.conversationId, conversationId),
-        orderBy: [sql`${schema.messages.createdAt} desc`],
-        limit: 10,
-      });
-      history = recentMessages
-        .reverse()
-        .filter((m: { role: string; content: string }) => m.content !== message)
-        .map((m: { role: string; content: string }) => ({ 
-          role: m.role as "user" | "assistant", 
-          content: m.content 
-        }));
-    } catch (err) {
-      console.error("[api/chat] Failed to fetch history context:", err);
+  const db = getDb();
+
+  // ── 3. Database availability check ──────────────────────────────────────
+  // MUST fail closed — if DB is unavailable, we cannot verify conversation
+  // ownership and proceeding would let any conversationId bypass access control.
+  if (!db) {
+    console.error("[api/chat] Database unavailable — refusing to proceed without ownership verification.");
+    return NextResponse.json(
+      { error: "Service temporarily unavailable. Please try again shortly." },
+      { status: 503 }
+    );
+  }
+
+  // ── 4. Verify conversation ownership & persist user message ─────────────
+  try {
+    const conversation = await db.query.conversations.findFirst({
+      where: and(
+        eq(schema.conversations.id, conversationId),
+        eq(schema.conversations.privyUserId, auth.session.userId)
+      ),
+    });
+
+    if (!conversation) {
+      return NextResponse.json({ error: "Conversation not found or unauthorized" }, { status: 404 });
     }
+
+    await db.insert(schema.messages).values({
+      conversationId,
+      role: "user",
+      content: message,
+    });
+
+    const [msgCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.messages)
+      .where(eq(schema.messages.conversationId, conversationId));
+
+    if (Number(msgCount.count) <= 1) {
+      const title = message.length > 40 ? message.slice(0, 37) + "..." : message;
+      await db
+        .update(schema.conversations)
+        .set({ title, updatedAt: new Date() })
+        .where(eq(schema.conversations.id, conversationId));
+    } else {
+      await db
+        .update(schema.conversations)
+        .set({ updatedAt: new Date() })
+        .where(eq(schema.conversations.id, conversationId));
+    }
+  } catch (err) {
+    console.error("[api/chat] Failed to persist user message:", err);
+    return NextResponse.json(
+      { error: "Failed to save message. Please try again." },
+      { status: 500 }
+    );
+  }
+
+  // ── 5. Retrieve History ───────────────────────────────────────────
+  let history: { role: "user" | "assistant"; content: string }[] = [];
+  try {
+    const recentMessages = await db.query.messages.findMany({
+      where: eq(schema.messages.conversationId, conversationId),
+      orderBy: [sql`${schema.messages.createdAt} desc`],
+      limit: 10,
+    });
+    // Reverse to chronological order, then exclude the LAST message only
+    // (the user message we just inserted). Filtering by content is fragile —
+    // if the user sends the same text twice, all matching entries get removed.
+    const chronological = recentMessages.reverse();
+    const withoutLastUserMsg = chronological.slice(0, -1);
+    history = withoutLastUserMsg
+      .map((m: { role: string; content: string }) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content
+      }));
+  } catch (err) {
+    console.error("[api/chat] Failed to fetch history context:", err);
   }
 
   // Attempt to verify wallet session for trading
@@ -123,22 +143,20 @@ export async function POST(req: Request) {
     console.error("[api/chat] Wallet verification failed:", err);
   }
 
-  // ── 5. Run Agent Loop ───────────────────────────────────────────────────
+  // ── 6. Run Agent Loop ───────────────────────────────────────────────────
   const result = await runAgentLoop(message, chain, history, conversationId, undefined, verifiedWalletAddress);
 
-  // ── 6. Persist Assistant Message ────────────────────────────────────────
-  if (db) {
-    try {
-      await db.insert(schema.messages).values({
-        conversationId,
-        role: "assistant",
-        content: result.agentMessage,
-        metadata: result.pipelineData as Record<string, unknown>,
-        toolCalls: result.toolCallsLog as unknown,
-      });
-    } catch (err) {
-      console.error("[api/chat] Failed to persist assistant message:", err);
-    }
+  // ── 7. Persist Assistant Message ────────────────────────────────────────
+  try {
+    await db.insert(schema.messages).values({
+      conversationId,
+      role: "assistant",
+      content: result.agentMessage,
+      metadata: result.pipelineData as Record<string, unknown>,
+      toolCalls: result.toolCallsLog as unknown,
+    });
+  } catch (err) {
+    console.error("[api/chat] Failed to persist assistant message:", err);
   }
 
   return NextResponse.json({

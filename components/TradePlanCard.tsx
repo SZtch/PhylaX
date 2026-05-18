@@ -14,19 +14,40 @@ const riskBadge = (status: TokenSignal["riskStatus"]) => {
   switch (status) {
     case "safe":
       return (
-        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200">
+        <span
+          className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md"
+          style={{
+            background: "oklch(0.5 0.15 160 / 0.1)",
+            color: "oklch(0.6 0.17 160)",
+            border: "1px solid oklch(0.55 0.15 160 / 0.2)",
+          }}
+        >
           <CheckCircle2 className="w-3 h-3" /> Low Risk
         </span>
       );
     case "high_risk":
       return (
-        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-red-50 text-red-600 border border-red-200">
+        <span
+          className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md"
+          style={{
+            background: "oklch(0.55 0.22 27 / 0.1)",
+            color: "oklch(0.7 0.2 27)",
+            border: "1px solid oklch(0.55 0.22 27 / 0.2)",
+          }}
+        >
           <AlertTriangle className="w-3 h-3" /> High Risk
         </span>
       );
     case "unknown":
       return (
-        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-200">
+        <span
+          className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md"
+          style={{
+            background: "oklch(0.6 0.18 85 / 0.1)",
+            color: "oklch(0.75 0.18 85)",
+            border: "1px solid oklch(0.6 0.18 85 / 0.2)",
+          }}
+        >
           <HelpCircle className="w-3 h-3" /> Needs Review
         </span>
       );
@@ -54,9 +75,12 @@ export function TradePlanCard({ tokens, chainName }: Props) {
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white border border-border rounded-2xl overflow-hidden shadow-soft"
+      className="bg-card border border-border rounded-2xl overflow-hidden shadow-soft"
     >
-      <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
+      <div
+        className="px-4 py-3 border-b border-border flex items-center justify-between"
+        style={{ background: "oklch(0 0 0 / 0.06)" }}
+      >
         <div className="flex items-center gap-2">
           <ListChecks className="w-4 h-4 text-electric" />
           <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">
@@ -69,7 +93,7 @@ export function TradePlanCard({ tokens, chainName }: Props) {
         {tokens.map((t, i) => (
           <div
             key={`${t.address}-${i}`}
-            className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-muted/20 transition-colors"
+            className="px-4 py-3 flex items-center justify-between gap-3"
           >
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
@@ -90,3 +114,4 @@ export function TradePlanCard({ tokens, chainName }: Props) {
     </motion.div>
   );
 }
+

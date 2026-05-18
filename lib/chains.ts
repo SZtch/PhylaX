@@ -27,6 +27,12 @@ export interface ChainConfig {
   enabled: boolean;
   /** If disabled, show this reason */
   disabledReason?: string;
+  /**
+   * Fallback native token USD price used for gas estimation
+   * when OKX API does not return nativeTokenPrice.
+   * Keep loosely up-to-date — it's only a display fallback, not execution logic.
+   */
+  nativeFallbackPrice: number;
 }
 
 export const SUPPORTED_CHAINS: ChainConfig[] = [
@@ -39,6 +45,7 @@ export const SUPPORTED_CHAINS: ChainConfig[] = [
     defaultFromToken: "0x74b7f16337b8972027f6196a17a631ac6de26d22",
     defaultFromSymbol: "USDC",
     enabled: true,
+    nativeFallbackPrice: 83, // OKB ~$83 (fallback only, runtime fetches live price)
   },
   {
     id: "base",
@@ -50,6 +57,7 @@ export const SUPPORTED_CHAINS: ChainConfig[] = [
     defaultFromSymbol: "USDC",
     enabled: false,
     disabledReason: "Coming Soon",
+    nativeFallbackPrice: 2500, // ETH ~$2500
   },
   {
     id: "bsc",
@@ -61,6 +69,7 @@ export const SUPPORTED_CHAINS: ChainConfig[] = [
     defaultFromSymbol: "USDC",
     enabled: false,
     disabledReason: "Coming Soon",
+    nativeFallbackPrice: 600, // BNB ~$600
   },
   {
     id: "solana",
@@ -72,6 +81,7 @@ export const SUPPORTED_CHAINS: ChainConfig[] = [
     defaultFromSymbol: "SOL",
     enabled: false,
     disabledReason: "Coming Soon",
+    nativeFallbackPrice: 160, // SOL ~$160
   },
 ];
 

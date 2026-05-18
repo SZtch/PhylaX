@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Inter", sans-serif;
+  --font-sans: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", sans-serif;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -35,6 +35,10 @@
   --color-cyan-soft: var(--cyan-soft);
   --color-surface: var(--surface);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LANDING PAGE — Light Mode (default)
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
   --radius: 1rem;
@@ -78,6 +82,434 @@
   --dur-layout: 260ms;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   APP SHELL — Dark Trading Terminal Theme
+   Applied via `.app-shell` class on the console wrapper
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.app-shell {
+  --background: oklch(0.08 0.025 265);
+  --foreground: oklch(0.95 0 0);
+  --surface: oklch(0.12 0.025 265);
+
+  --card: oklch(0.11 0.025 265);
+  --card-foreground: oklch(0.95 0 0);
+  --secondary: oklch(0.14 0.025 265);
+  --secondary-foreground: oklch(0.95 0 0);
+  --muted: oklch(0.14 0.025 265);
+  --muted-foreground: oklch(0.6 0.015 260);
+  --accent: oklch(0.17 0.03 265);
+  --accent-foreground: oklch(0.95 0 0);
+  --border: oklch(1 0 0 / 0.08);
+  --input: oklch(1 0 0 / 0.06);
+
+  --shadow-soft: 0 8px 32px oklch(0 0 0 / 0.4);
+  --shadow-glow: 0 0 40px oklch(0.62 0.19 260 / 0.2);
+
+  /* App-specific tokens */
+  --app-sidebar: oklch(0.08 0.025 265 / 0.7);
+  --app-navbar: oklch(0.08 0.025 265 / 0.8);
+  --app-main: oklch(0.06 0.02 265);
+  --app-card-glass: oklch(1 0 0 / 0.03);
+  --app-card-border: oklch(1 0 0 / 0.08);
+  --app-text-primary: oklch(0.93 0 0);
+  --app-text-secondary: oklch(0.6 0.015 260);
+  --app-text-tertiary: oklch(0.4 0.01 260);
+  --app-input-bg: oklch(0.12 0.02 265);
+  --app-hover: oklch(1 0 0 / 0.05);
+  --app-active: oklch(1 0 0 / 0.1);
+  --app-success: oklch(0.72 0.17 155);
+  --app-warning: oklch(0.8 0.15 85);
+  --app-danger: oklch(0.65 0.2 25);
+
+  /* Card / bubble theme tokens */
+  --app-user-bubble: oklch(0.14 0.025 265);
+  --app-user-bubble-text: oklch(0.93 0 0);
+  --app-user-bubble-border: oklch(1 0 0 / 0.06);
+  --app-card-bg: oklch(0.1 0.025 265 / 0.6);
+  --app-card-bg-solid: oklch(0.11 0.025 265);
+  --app-subtle-bg: oklch(1 0 0 / 0.04);
+  --app-subtle-border: oklch(1 0 0 / 0.06);
+  --app-badge-bg: oklch(1 0 0 / 0.06);
+  --app-badge-text: oklch(0.7 0 0);
+  --app-disabled-btn: oklch(1 0 0 / 0.06);
+  --app-divider: oklch(1 0 0 / 0.06);
+
+  /* Ambient gradient background */
+  background:
+    radial-gradient(ellipse 900px 600px at 10% 10%, oklch(0.62 0.19 260 / 0.06), transparent 50%),
+    radial-gradient(ellipse 800px 500px at 90% 85%, oklch(0.7 0.13 280 / 0.05), transparent 50%),
+    radial-gradient(ellipse 600px 400px at 50% 50%, oklch(0.82 0.11 220 / 0.03), transparent 50%),
+    oklch(0.06 0.02 265) !important;
+}
+
+/* Light variant for app shell when .app-light is toggled */
+.app-shell.app-light {
+  --background: oklch(0.975 0.003 260);
+  --foreground: oklch(0.15 0.04 265);
+  --surface: oklch(1 0 0);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.04 265);
+  --secondary: oklch(0.96 0.005 260);
+  --secondary-foreground: oklch(0.15 0.04 265);
+  --muted: oklch(0.96 0.005 260);
+  --muted-foreground: oklch(0.45 0.02 260);
+  --accent: oklch(0.95 0.02 270);
+  --accent-foreground: oklch(0.15 0.04 265);
+  --border: oklch(0.88 0.01 260);
+  --input: oklch(0.92 0.01 260);
+
+  --shadow-soft: 0 4px 20px oklch(0.21 0.05 265 / 0.06);
+  --shadow-glow: 0 0 30px oklch(0.62 0.19 260 / 0.12);
+
+  /* Sidebar stays DARK even in light mode (premium look) */
+  --app-sidebar: oklch(0.09 0.025 265 / 0.95);
+  /* Navbar: subtle frosted glass on light */
+  --app-navbar: oklch(1 0 0 / 0.85);
+  /* Main area: clean warm white */
+  --app-main: oklch(0.965 0.003 260);
+  --app-card-glass: oklch(1 0 0);
+  --app-card-border: oklch(0.88 0.01 260);
+  --app-text-primary: oklch(0.15 0.04 265);
+  --app-text-secondary: oklch(0.45 0.02 260);
+  --app-text-tertiary: oklch(0.65 0.01 260);
+  --app-input-bg: oklch(0.94 0.005 260);
+  --app-hover: oklch(0.93 0.005 260);
+  --app-active: oklch(0.9 0.01 260);
+  --app-success: oklch(0.45 0.17 155);
+  --app-warning: oklch(0.5 0.15 85);
+  --app-danger: oklch(0.5 0.2 25);
+
+  /* Card / bubble theme tokens */
+  --app-user-bubble: oklch(0.22 0.04 265);
+  --app-user-bubble-text: oklch(0.95 0 0);
+  --app-user-bubble-border: oklch(0.35 0.04 265);
+  --app-card-bg: oklch(1 0 0 / 0.7);
+  --app-card-bg-solid: oklch(0.98 0.003 260);
+  --app-subtle-bg: oklch(0 0 0 / 0.03);
+  --app-subtle-border: oklch(0 0 0 / 0.06);
+  --app-badge-bg: oklch(0.94 0.005 260);
+  --app-badge-text: oklch(0.4 0.02 260);
+  --app-disabled-btn: oklch(0.93 0.005 260);
+  --app-divider: oklch(0 0 0 / 0.06);
+
+  /* Ambient gradient background — soft pastels */
+  background:
+    radial-gradient(ellipse 1000px 700px at 5% 0%, oklch(0.62 0.19 260 / 0.04), transparent 50%),
+    radial-gradient(ellipse 900px 600px at 95% 90%, oklch(0.7 0.13 280 / 0.035), transparent 50%),
+    radial-gradient(ellipse 700px 500px at 50% 40%, oklch(0.82 0.11 220 / 0.02), transparent 50%),
+    oklch(0.975 0.003 260) !important;
+}
+
+/* Light mode overrides for structural elements */
+.app-shell.app-light .app-grid-bg {
+  background:
+    linear-gradient(to right, oklch(0.21 0.05 265 / 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.21 0.05 265 / 0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.app-shell.app-light .app-viewport-glow::before {
+  background: radial-gradient(ellipse 400px 100% at 0% 30%, oklch(0.62 0.19 260 / 0.05), transparent 70%);
+}
+.app-shell.app-light .app-viewport-glow::after {
+  background: radial-gradient(ellipse 400px 100% at 100% 70%, oklch(0.7 0.13 280 / 0.04), transparent 70%);
+}
+.app-shell.app-light .sidebar-floating {
+  background: oklch(0.99 0.003 260 / 0.9);
+  border-color: transparent;
+  border-right-color: oklch(0 0 0 / 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.app-shell.app-light .sidebar-floating::after {
+  background: linear-gradient(180deg, transparent, oklch(0.62 0.19 260 / 0.08), transparent);
+}
+.app-shell.app-light .chat-input-capsule {
+  background: oklch(0.94 0.005 260);
+  border-color: oklch(0.86 0.01 260);
+}
+.app-shell.app-light .chat-input-capsule:focus-within {
+  border-color: oklch(0.62 0.19 260 / 0.4);
+  box-shadow: 0 0 20px oklch(0.62 0.19 260 / 0.06);
+}
+.app-shell.app-light .suggestion-chip.chip-indigo {
+  border-color: oklch(0.62 0.19 260 / 0.3);
+  color: oklch(0.5 0.19 260);
+  background: oklch(0.62 0.19 260 / 0.06);
+}
+.app-shell.app-light .suggestion-chip.chip-cyan {
+  border-color: oklch(0.6 0.11 220 / 0.3);
+  color: oklch(0.45 0.11 220);
+  background: oklch(0.6 0.11 220 / 0.06);
+}
+.app-shell.app-light .suggestion-chip.chip-emerald {
+  border-color: oklch(0.55 0.17 155 / 0.3);
+  color: oklch(0.4 0.17 155);
+  background: oklch(0.55 0.17 155 / 0.06);
+}
+.app-shell.app-light .suggestion-chip.chip-amber {
+  border-color: oklch(0.6 0.15 85 / 0.3);
+  color: oklch(0.45 0.15 85);
+  background: oklch(0.6 0.15 85 / 0.06);
+}
+.app-shell.app-light .suggestion-chip.chip-violet {
+  border-color: oklch(0.55 0.13 280 / 0.3);
+  color: oklch(0.45 0.13 280);
+  background: oklch(0.55 0.13 280 / 0.06);
+}
+.app-shell.app-light .btn-capsule-white {
+  background: oklch(0.15 0.04 265);
+  color: oklch(0.95 0 0);
+  border-color: oklch(0.2 0.04 265);
+}
+.app-shell.app-light .btn-icon-circle {
+  background: oklch(0.94 0.005 260);
+  border-color: oklch(0.86 0.01 260);
+  color: oklch(0.4 0.02 260);
+}
+.app-shell.app-light .btn-icon-circle:hover {
+  background: oklch(0.9 0.005 260);
+  color: oklch(0.2 0.04 265);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   XONA-STYLE STRUCTURAL PATTERNS
+   Grid background, floating sidebar, capsule shapes, viewport glow
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Grid texture for app main area */
+.app-grid-bg {
+  position: relative;
+  background:
+    linear-gradient(to right, oklch(0.62 0.19 260 / 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.62 0.19 260 / 0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Viewport edge glow — ambient indigo glow on edges + top accent */
+.app-viewport-glow {
+  position: relative;
+}
+.app-viewport-glow::before,
+.app-viewport-glow::after {
+  content: "";
+  position: fixed;
+  pointer-events: none;
+  z-index: 0;
+}
+.app-viewport-glow::before {
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 400px;
+  background: radial-gradient(ellipse 400px 100% at 0% 30%, oklch(0.62 0.19 260 / 0.09), transparent 70%);
+}
+.app-viewport-glow::after {
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 400px;
+  background: radial-gradient(ellipse 400px 100% at 100% 70%, oklch(0.7 0.13 280 / 0.07), transparent 70%);
+}
+
+/* Floating sidebar card (desktop) */
+.sidebar-floating {
+  margin: 0;
+  border-radius: 0;
+  border: none;
+  border-right: 1px solid oklch(1 0 0 / 0.06);
+  background: var(--app-navbar);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  overflow: hidden;
+  height: 100%;
+  position: relative;
+}
+/* Subtle gradient edge glow on sidebar right */
+.sidebar-floating::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  right: -1px;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, oklch(0.62 0.19 260 / 0.2), oklch(0.7 0.13 280 / 0.15), transparent);
+  pointer-events: none;
+}
+
+/* Capsule navbar pill */
+.navbar-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 9999px;
+  background: oklch(0.14 0.025 265 / 0.8);
+  border: 1px solid oklch(1 0 0 / 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.navbar-capsule-item {
+  padding: 6px 16px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: oklch(1 0 0 / 0.5);
+  transition: all 180ms ease;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+}
+.navbar-capsule-item:hover {
+  color: oklch(0.95 0 0);
+  background: oklch(1 0 0 / 0.06);
+}
+.navbar-capsule-item.is-active {
+  color: oklch(0.95 0 0);
+  background: oklch(1 0 0 / 0.1);
+}
+
+/* Capsule input bar */
+.chat-input-capsule {
+  border-radius: 9999px;
+  padding: 10px 12px 10px 20px;
+  background: oklch(0.12 0.02 265);
+  border: 1px solid oklch(1 0 0 / 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.chat-input-capsule:focus-within {
+  border-color: oklch(0.62 0.19 260 / 0.4);
+  box-shadow:
+    0 0 20px oklch(0.62 0.19 260 / 0.1),
+    0 0 60px oklch(0.62 0.19 260 / 0.04),
+    inset 0 0 12px oklch(0.62 0.19 260 / 0.03);
+}
+
+/* Suggestion chips — colored border pills */
+.suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: 1px solid;
+  cursor: pointer;
+  transition: all 200ms ease;
+  white-space: nowrap;
+}
+.suggestion-chip:hover {
+  transform: translateY(-1px);
+}
+.suggestion-chip.chip-indigo {
+  border-color: oklch(0.62 0.19 260 / 0.35);
+  color: oklch(0.75 0.15 260);
+  background: oklch(0.62 0.19 260 / 0.06);
+}
+.suggestion-chip.chip-indigo:hover {
+  background: oklch(0.62 0.19 260 / 0.12);
+  border-color: oklch(0.62 0.19 260 / 0.5);
+}
+.suggestion-chip.chip-cyan {
+  border-color: oklch(0.82 0.11 220 / 0.35);
+  color: oklch(0.82 0.11 220);
+  background: oklch(0.82 0.11 220 / 0.06);
+}
+.suggestion-chip.chip-cyan:hover {
+  background: oklch(0.82 0.11 220 / 0.12);
+  border-color: oklch(0.82 0.11 220 / 0.5);
+}
+.suggestion-chip.chip-emerald {
+  border-color: oklch(0.72 0.17 155 / 0.35);
+  color: oklch(0.72 0.17 155);
+  background: oklch(0.72 0.17 155 / 0.06);
+}
+.suggestion-chip.chip-emerald:hover {
+  background: oklch(0.72 0.17 155 / 0.12);
+  border-color: oklch(0.72 0.17 155 / 0.5);
+}
+.suggestion-chip.chip-amber {
+  border-color: oklch(0.8 0.15 85 / 0.35);
+  color: oklch(0.8 0.15 85);
+  background: oklch(0.8 0.15 85 / 0.06);
+}
+.suggestion-chip.chip-amber:hover {
+  background: oklch(0.8 0.15 85 / 0.12);
+  border-color: oklch(0.8 0.15 85 / 0.5);
+}
+.suggestion-chip.chip-violet {
+  border-color: oklch(0.7 0.13 280 / 0.35);
+  color: oklch(0.7 0.13 280);
+  background: oklch(0.7 0.13 280 / 0.06);
+}
+.suggestion-chip.chip-violet:hover {
+  background: oklch(0.7 0.13 280 / 0.12);
+  border-color: oklch(0.7 0.13 280 / 0.5);
+}
+
+/* Sign-up button capsule (white variant) */
+.btn-capsule-white {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 18px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: oklch(0.95 0 0);
+  color: oklch(0.1 0 0);
+  border: 1px solid oklch(1 0 0 / 0.15);
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.2), inset 0 1px 0 oklch(1 0 0 / 0.1);
+  transition: all 200ms ease;
+  cursor: pointer;
+}
+.btn-capsule-white:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px oklch(0 0 0 / 0.3), inset 0 1px 0 oklch(1 0 0 / 0.1);
+}
+
+/* Circular icon button */
+.btn-icon-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  border: 1px solid oklch(1 0 0 / 0.1);
+  background: oklch(0.14 0.025 265 / 0.6);
+  color: oklch(1 0 0 / 0.5);
+  transition: all 180ms ease;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+.btn-icon-circle:hover {
+  background: oklch(1 0 0 / 0.08);
+  color: oklch(0.95 0 0);
+  border-color: oklch(1 0 0 / 0.15);
+}
+
+/* Legacy .dark class (landing page dark sections) */
+.dark {
+  --background: oklch(0.12 0.02 265);
+  --foreground: oklch(0.98 0 0);
+  --surface: oklch(0.18 0.03 265);
+
+  --card: oklch(0.15 0.02 265);
+  --card-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.18 0.03 265);
+  --secondary-foreground: oklch(0.98 0 0);
+  --muted: oklch(0.18 0.03 265);
+  --muted-foreground: oklch(0.7 0.02 260);
+  --border: oklch(0.22 0.03 265);
+  --input: oklch(0.22 0.03 265);
+}
+
 @layer base {
   * {
     border-color: var(--color-border);
@@ -91,7 +523,18 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     font-feature-settings: "ss01", "cv11";
+    font-size: 14px;
   }
+}
+
+/* ─── Responsive typography: scale up for desktop ─── */
+@media (min-width: 1024px) {
+  body { font-size: 15px; }
+  .app-shell { font-size: 15px; }
+}
+@media (min-width: 1440px) {
+  body { font-size: 16px; }
+  .app-shell { font-size: 16px; }
 }
 
 @layer utilities {
@@ -118,6 +561,32 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   APP-SHELL GLASS CARDS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer utilities {
+  .app-card {
+    background: var(--app-card-glass);
+    border: 1px solid var(--app-card-border);
+    border-radius: 1rem;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .app-card-hover {
+    transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+  .app-card-hover:hover {
+    background: var(--app-hover);
+    border-color: oklch(1 0 0 / 0.12);
+    box-shadow: 0 4px 24px oklch(0 0 0 / 0.15);
+  }
+  .app-shell.app-light .app-card-hover:hover {
+    border-color: oklch(0.85 0.01 260);
+    box-shadow: 0 4px 16px oklch(0.5 0.05 260 / 0.06);
+  }
+}
+
 /* ─── Dropdown animation utility ─── */
 @layer utilities {
   .dropdown-panel {
@@ -140,6 +609,10 @@
   .sidebar-shell {
     transition: width var(--dur-layout) var(--ease-out-smooth);
     will-change: width;
+    border-right: none;
+  }
+  .app-shell.app-light .sidebar-shell {
+    border-right: none;
   }
   .sidebar-mobile-overlay {
     transition:
@@ -150,6 +623,8 @@
   .sidebar-mobile-drawer {
     transition: transform var(--dur-layout) var(--ease-out-smooth);
     will-change: transform;
+    border-radius: 0 20px 20px 0;
+    border-right: 1px solid oklch(1 0 0 / 0.08);
   }
   .scroll-contain {
     overscroll-behavior: contain;
@@ -185,6 +660,76 @@
     transform: rotate(180deg);
   }
 }
+
+/* ─── Stagger children entrance ─── */
+@layer utilities {
+  .stagger-children > * {
+    opacity: 0;
+    transform: translateY(8px);
+    animation: staggerIn 0.35s var(--ease-out-smooth) forwards;
+  }
+  .stagger-children > *:nth-child(1) { animation-delay: 0.05s; }
+  .stagger-children > *:nth-child(2) { animation-delay: 0.1s; }
+  .stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
+  .stagger-children > *:nth-child(4) { animation-delay: 0.2s; }
+  .stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
+  .stagger-children > *:nth-child(6) { animation-delay: 0.3s; }
+  .stagger-children > *:nth-child(7) { animation-delay: 0.35s; }
+  .stagger-children > *:nth-child(8) { animation-delay: 0.4s; }
+}
+@keyframes staggerIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Active nav indicator glow ─── */
+@layer utilities {
+  .nav-glow {
+    position: relative;
+  }
+  .nav-glow::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 60%;
+    border-radius: 0 4px 4px 0;
+    background: var(--gradient-brand);
+    box-shadow: 0 0 12px oklch(0.62 0.19 260 / 0.5);
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+  .nav-glow.is-active::before {
+    opacity: 1;
+  }
+}
+
+/* ─── Scrollbar styling for app shell ─── */
+.app-shell ::-webkit-scrollbar {
+  width: 6px;
+}
+.app-shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.app-shell ::-webkit-scrollbar-thumb {
+  background: oklch(1 0 0 / 0.1);
+  border-radius: 4px;
+}
+.app-shell ::-webkit-scrollbar-thumb:hover {
+  background: oklch(1 0 0 / 0.2);
+}
+
+.app-shell.app-light ::-webkit-scrollbar-thumb {
+  background: oklch(0 0 0 / 0.1);
+}
+.app-shell.app-light ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0 0 0 / 0.2);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LANDING PAGE ANIMATIONS (unchanged)
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 @keyframes signal-flow {
   0% { transform: translateX(-100%); }
@@ -296,3 +841,106 @@
     transition: none !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LANDING PAGE — Animations & Utilities (New Design)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes signal-flow {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.animate-signal-flow { animation: signal-flow 3.5s linear infinite; }
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-18px) rotate(2deg); }
+}
+.animate-float-slow { animation: float-slow 7s ease-in-out infinite; }
+
+@keyframes ring-spin {
+  to { transform: rotate(360deg); }
+}
+.animate-ring-spin { animation: ring-spin 18s linear infinite; }
+
+@keyframes particle-rise {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  10% { opacity: 0.6; }
+  90% { opacity: 0.6; }
+  100% { transform: translateY(-120px) translateX(20px); opacity: 0; }
+}
+.animate-particle-rise { animation: particle-rise 8s ease-in-out infinite; }
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+.animate-pulse-ring { animation: pulse-ring 3s ease-out infinite; }
+
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.animate-gradient-shift {
+  background-size: 200% 200%;
+  animation: gradient-shift 8s ease infinite;
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); opacity: 0; }
+  50% { opacity: 0.8; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+.animate-scan { animation: scan-line 4s ease-in-out infinite; }
+
+@keyframes drift-x {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(-30px); }
+}
+.animate-drift-x { animation: drift-x 20s ease-in-out infinite; }
+
+/* ─── Utilities ─── */
+.text-gradient-brand {
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bg-gradient-brand { background: var(--gradient-brand); }
+.shadow-soft { box-shadow: var(--shadow-soft); }
+.shadow-glow { box-shadow: var(--shadow-glow); }
+
+.glass {
+  background: color-mix(in oklab, white 70%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.glass-dark {
+  background: color-mix(in oklab, var(--navy) 70%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.noise-texture { position: relative; }
+.noise-texture::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+.grid-texture {
+  background-image:
+    linear-gradient(to right, oklch(0.62 0.19 260 / 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.62 0.19 260 / 0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+.bg-surface-soft {
+  background: linear-gradient(180deg, #ffffff 0%, #F8FAFC 100%);
+}
+.bg-navy-deep {
+  background: radial-gradient(1200px 600px at 50% 0%, oklch(0.32 0.12 270 / 0.6), transparent 60%), oklch(0.18 0.05 265);
+}
+

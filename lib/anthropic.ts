@@ -4,6 +4,7 @@ import { ThesisIntent, ThesisIntentSchema } from "./schemas";
 import { getToolsForAnthropic, registry } from "./tools/registry";
 import { createApproval } from "./approval-store";
 import { ChatState } from "./chat-states";
+import { getActiveProviderWithFallback, chatWithFallback, type LLMProvider, type LLMToolCall, type LLMResponse } from "./llm-provider";
 
 let anthropic: Anthropic | null = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -14,44 +15,40 @@ export function __setAnthropicForTesting(client: any) {
   anthropic = client;
 }
 
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 
 const PHYLAX_PERSONA = `
-You are PhylaX, a compact, professional trading assistant.
-Your responses must be short (2–5 sentences), action-oriented, and focused on the user's intent.
+You are PhylaX, a DeFi copilot that feels like chatting with a sharp friend who knows crypto inside out. You protect the wallet, scan before every trade, and quote with real OKX data.
 
-Persona Guidelines:
-- Tone: Direct, professional, security-conscious.
-- Concise: NO generic fillers like "analyzed-style" or "based-on" preambles. Start with the result.
-- Scan-First: Always lead with risk results if available.
-- Action-Oriented: Every message should clear the path to the next safe step.
+PERSONALITY:
+- Talk like a real person, not a robot. Casual, warm, but still precise when it matters.
+- Short replies. 1 to 3 sentences max. Never pad or over-explain.
+- No markdown bold, no bullet lists, no headers, no long dashes.
+- Skip filler like "Great question!", "Sure!", "Of course!", "I'll help you with that", "Based on my analysis".
+- Lead with the answer, not the process.
+- You genuinely care about the user's money. Show it by being direct, not by writing essays.
+- Default language is English. If the user writes in another language, reply in that same language.
 
-Response Patterns:
-1. Quote Ready: "Quote ready on [Chain]. Risk scan: [LEVEL]. Estimated output: [Amount]. [Action]."
-2. Blocked: "Trade blocked: [Reason]. Try a lower-risk token."
-3. Coming Soon: "Live execution for [Chain] is Coming Soon. Switch to X Layer to proceed."
-4. Insufficient Balance: "Insufficient balance: verified wallet has [Balance] [Symbol]. Reduce amount or top up."
-5. Submitted: "Transaction submitted to [Chain]. Check status or view on explorer."
+RESPONSE STYLE:
+- Scan result: "OKB looks clean, LOW risk. Quote ready, 50 USDC gets you around 12.4 OKB. Slippage 0.3%. Sign when you're good."
+- Blocked trade: "Nah that token's flagged. Not worth the risk. Try OKB or USDC instead."
+- Missing chain: "X Layer only for now, switch over and try again."
+- Low balance: "You've got [X] in the wallet. Not enough for that trade, try lowering the amount."
+- Confirmed: "Done, tx submitted. Check explorer if you wanna track it."
+- Market read: one line on what smart money is doing, one line caveat. No lectures.
+- Unsupported request: decline in one sentence, no apology.
 
-Meme / Trenches / Smart Money Rules:
-1. Use \`market_structure_check\` for supported tokens (BTC, ETH, etc.). The market_structure_check tool is read-only.
-2. If unsupported, say "not available yet" or "unsupported".
-3. NEVER fake data or results.
-4. Always state: Smart money activity does not mean safe. KOL activity does not mean safe. Trending does not mean safe.
-5. Do not fake holder/liquidity data.
-6. Refuse requests to auto-trade, snipe, or run a bot.
+SAFETY (always):
+- Never say "safe token" or "guaranteed" or "risk-free".
+- Say "LOW risk by current scan", not a promise.
+- Wallet signature required, server never broadcasts.
 
-Agent Planning & Decision Rules:
-1. Output an <agent_plan> JSON block BEFORE calling tools.
-2. Produce a Candidate Comparison summary if multiple tokens are checked.
-3. Decision Summary: Final answer must include found risks and whether wallet signing is required.
-4. Next Action: Suggest exactly ONE safe next action (e.g. "Preview quote").
-5. Never suggest auto-buy, copy-trade, sniper, or bypass scan.
-
-Safety Rules:
-- NEVER use: "safe token", "guaranteed", "risk-free", "auto-execute".
-- USE: "LOW risk by current scan", "blocked", "wallet signature required", "server never broadcasts".
-- Execution always requires user's wallet signature.
+TOOLS:
+- Output <agent_plan> JSON block before calling tools.
+- After tools: give ONE clear next action. Not a list of options.
+- If multiple tokens scanned: compare them in 1 to 2 lines max.
+- CRITICAL: Native tokens (like OKB on X Layer, ETH on Base) ALWAYS use the address \`0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\`. NEVER use \`search_token\` to find the address of Native OKB. You MUST explicitly pass \`0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\` for the \`from_address\` if swapping from OKB. DO NOT leave it undefined.
+- CRITICAL: If the user provides a fiat amount for a swap (e.g. "$1", "10 USD", "1 USDC" if 1 USDC = $1), you should use the \`amount_usd\` parameter instead of \`amount\` in the \`get_swap_quote\` tool! The tool will auto-convert it to the correct token amount using live CoinGecko prices.
 `;
 
 export async function parseThesis(thesis: string, trustedRiskMode?: "conservative" | "moderate" | "degen"): Promise<ThesisIntent> {
@@ -112,16 +109,27 @@ export async function runAgentLoop(
   onProgress?: AgentProgressCallback,
   walletAddress: string = ""
 ): Promise<AgentRunResult> {
-  if (!anthropic) {
-    throw new Error("Anthropic API key is not configured. Real AI agent is unavailable.");
+  const providers = getActiveProviderWithFallback();
+  if (!providers) {
+    return {
+      agentMessage: "PhylaX AI is not configured yet. Your wallet and funds are safe, but I can't process requests right now. Contact the team.",
+      action: "error",
+      chatState: "FAILED",
+      toolCallsLog: [],
+      error: "No LLM provider configured (set ANTHROPIC_API_KEY or DEEPSEEK_API_KEY)"
+    };
   }
+  let activeProvider: LLMProvider = providers.provider;
+  const fallbackProvider = providers.fallback;
 
-  const systemPrompt = `${PHYLAX_PERSONA}\n${chainHint ? `Context: User selected ${chainHint} as default chain.` : ""}`;
+  const systemPrompt = `${PHYLAX_PERSONA}
+${chainHint ? `Context: User selected ${chainHint} as default chain.` : ""}
+${walletAddress ? `Context: The user's connected wallet address is ${walletAddress}. Use this for any balance or portfolio queries.` : ""}`;
   const limitedHistory = history.slice(-10);
 
-  const messages: Anthropic.MessageParam[] = [
-    ...limitedHistory.map(h => ({ role: h.role, content: h.content })),
-    { role: "user", content: message }
+  const messages: { role: "user" | "assistant"; content: unknown }[] = [
+    ...limitedHistory.map(h => ({ role: h.role, content: h.content as unknown })),
+    { role: "user" as const, content: message }
   ];
 
   const tools = getToolsForAnthropic();
@@ -140,36 +148,37 @@ export async function runAgentLoop(
     }
     iterations++;
 
-    let response;
+    let llmResponse: LLMResponse;
     try {
-      response = await anthropic.messages.create({
-        model: ANTHROPIC_MODEL,
-        max_tokens: 1000,
-        temperature: 0,
-        system: systemPrompt,
-        messages: messages,
-        tools: tools as Anthropic.Tool[],
-      });
+      const result = await chatWithFallback(activeProvider, fallbackProvider, systemPrompt, messages, tools, 1000);
+      llmResponse = result.response;
+      if (result.usedProvider !== activeProvider.name) {
+        console.log(`[agent] Switched to ${result.usedProvider} (fallback)`);
+      }
     } catch (err: unknown) {
-      console.error("Anthropic API Error:", err);
-      return {
-        agentMessage: `⚠️ Model API error: ${err instanceof Error ? err.message : String(err)}`,
-        action: "error",
-        chatState: "FAILED",
-        toolCallsLog,
-        error: err instanceof Error ? err.message : String(err)
-      };
+      console.error("LLM API Error:", err);
+      const rawMsg = err instanceof Error ? err.message : String(err);
+      const rawLower = rawMsg.toLowerCase();
+      let friendlyMessage: string;
+      if (rawLower.includes("credit") || rawLower.includes("billing") || rawLower.includes("payment") || rawLower.includes("insufficient")) {
+        friendlyMessage = "PhylaX's brain is temporarily offline (API credits ran out). Your wallet and funds are safe. Try again later or contact the team.";
+      } else if (rawLower.includes("rate_limit") || rawLower.includes("rate limit") || rawLower.includes("too many")) {
+        friendlyMessage = "Too many requests right now, give it a sec and try again.";
+      } else if (rawLower.includes("overloaded") || rawLower.includes("529") || rawLower.includes("capacity")) {
+        friendlyMessage = "The AI model is overloaded right now. Try again in a minute.";
+      } else if (rawLower.includes("timeout") || rawLower.includes("network") || rawLower.includes("econnrefused") || rawLower.includes("fetch failed")) {
+        friendlyMessage = "Couldn't reach the AI service. Check your connection or try again.";
+      } else {
+        friendlyMessage = "Something went wrong on PhylaX's end. Your wallet is safe. Try again in a moment.";
+      }
+      return { agentMessage: friendlyMessage, action: "error", chatState: "FAILED" as ChatState, toolCallsLog, error: rawMsg };
     }
 
-    messages.push({
-      role: "assistant",
-      content: response.content,
-    });
+    messages.push(activeProvider.buildAssistantMessage(llmResponse));
 
-    const textBlocks = response.content.filter((c: unknown) => (c as Record<string, unknown>).type === "text") as unknown as Record<string, unknown>[];
-    for (const textBlock of textBlocks) {
-      const text = String(textBlock.text);
-      const planMatch = text.match(/<agent_plan>([\s\S]*?)<\/agent_plan>/);
+    // Extract agent plan from text
+    if (llmResponse.textContent) {
+      const planMatch = llmResponse.textContent.match(/<agent_plan>([\s\S]*?)<\/agent_plan>/);
       if (planMatch && !agentPlan) {
         try {
           agentPlan = JSON.parse(planMatch[1]);
@@ -178,26 +187,29 @@ export async function runAgentLoop(
       }
     }
 
-    if (response.stop_reason !== "tool_use") {
+    if (llmResponse.stopReason !== "tool_use") {
       if (agentPlan?.plan && Array.isArray(agentPlan.plan) && agentPlan.plan.some(p => typeof p === 'string' && p.toLowerCase().includes("compare"))) {
         onProgress?.("step", { label: "Comparing candidates", status: "done", timestamp: new Date().toISOString() });
       }
       onProgress?.("step", { label: "Synthesizing decision", status: "running", timestamp: new Date().toISOString() });
-      // Loop ends, we have a final text response
-      const textContent = response.content.find((c: unknown) => (c as Record<string, unknown>).type === "text") as Record<string, unknown> | undefined;
-      let finalAgentMessage = textContent?.type === "text" ? String(textContent.text) : "I have completed the request.";
+      let finalAgentMessage = llmResponse.textContent || "I have completed the request.";
 
       const finalPlanMatch = finalAgentMessage.match(/<agent_plan>([\s\S]*?)<\/agent_plan>/);
       if (finalPlanMatch) {
         try {
           agentPlan = JSON.parse(finalPlanMatch[1]);
-          const planText = agentPlan?.plan ? `**Plan:**\n${(agentPlan.plan as string[]).map((p: string, i: number) => `${i + 1}. ${p}`).join("\n")}\n\n` : "";
+          // Strip the raw <agent_plan> block from the message — no markdown bold per persona
+          const planText = agentPlan?.plan
+            ? `Plan: ${(agentPlan.plan as string[]).join(" → ")}\n\n`
+            : "";
           finalAgentMessage = finalAgentMessage.replace(finalPlanMatch[0], planText).trim();
         } catch {
           finalAgentMessage = finalAgentMessage.replace(finalPlanMatch[0], "").trim();
         }
-      } else if (agentPlan && !finalAgentMessage.includes("**Plan:**")) {
-        const planText = agentPlan.plan ? `**Plan:**\n${(agentPlan.plan as string[]).map((p: string, i: number) => `${i + 1}. ${p}`).join("\n")}\n\n` : "";
+      } else if (agentPlan && !finalAgentMessage.includes("Plan:")) {
+        const planText = agentPlan.plan
+          ? `Plan: ${(agentPlan.plan as string[]).join(" → ")}\n\n`
+          : "";
         finalAgentMessage = planText + finalAgentMessage;
       }
 
@@ -220,17 +232,17 @@ export async function runAgentLoop(
     }
 
     // Process tool calls
-    const toolUseBlocks = response.content.filter((c: unknown) => (c as Record<string, unknown>).type === "tool_use") as Anthropic.ToolUseBlock[];
+    const toolUseBlocks = llmResponse.toolCalls;
     
     if (toolUseBlocks.length > 0) {
       // Bounded Orchestration: Max 5 tool calls total, max 3 scan candidates
       const blocksToExecute = toolUseBlocks.slice(0, 5);
-      const finalBlocksToExecute: Anthropic.ToolUseBlock[] = [];
+      const finalBlocksToExecute: LLMToolCall[] = [];
       let scanCount = 0;
       
       for (const block of blocksToExecute) {
         if (block.name === "scan_token") {
-          if (scanCount >= 3) continue; // Skip to enforce cap
+          if (scanCount >= 3) continue;
           scanCount++;
         }
         finalBlocksToExecute.push(block);
@@ -239,7 +251,7 @@ export async function runAgentLoop(
       // Execute tools concurrently
       const executionPromises = finalBlocksToExecute.map(async (block) => {
         const toolName = block.name;
-        const toolInput = block.input as Record<string, unknown>;
+        const toolInput = block.input;
         
         let label = "Using tool";
         if (toolName === "get_signals") label = "Searching candidates";
@@ -283,7 +295,7 @@ export async function runAgentLoop(
 
       const settledResults = await Promise.allSettled(executionPromises);
 
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+      const toolResults: { toolCallId: string; content: string; isError: boolean }[] = [];
       const successfulSignals: Record<string, unknown>[] = [];
       const successfulScans: Record<string, unknown>[] = [];
       let quoteResultData: Record<string, unknown> | null = null;
@@ -294,12 +306,10 @@ export async function runAgentLoop(
         const executedIndex = finalBlocksToExecute.findIndex(b => b.id === originalBlock.id);
 
         if (executedIndex === -1) {
-          // Block was skipped due to caps
           toolResults.push({
-            type: "tool_result",
-            tool_use_id: originalBlock.id,
+            toolCallId: originalBlock.id,
             content: JSON.stringify({ error: "Skipped: Exceeded maximum allowed tool executions or scan candidates for this turn." }),
-            is_error: true,
+            isError: true,
           });
           continue;
         }
@@ -307,10 +317,9 @@ export async function runAgentLoop(
         const settled = settledResults[executedIndex];
         if (settled.status === "rejected") {
            toolResults.push({
-             type: "tool_result",
-             tool_use_id: originalBlock.id,
+             toolCallId: originalBlock.id,
              content: JSON.stringify({ error: String(settled.reason) }),
-             is_error: true,
+             isError: true,
            });
            continue;
         }
@@ -326,17 +335,27 @@ export async function runAgentLoop(
         });
 
         toolResults.push({
-          type: "tool_result",
-          tool_use_id: originalBlock.id,
+          toolCallId: originalBlock.id,
           content: typeof result === "string" ? result : JSON.stringify(result),
-          is_error: isError,
+          isError: isError,
         });
 
         if (!isError) {
           const res = result as Record<string, unknown>;
           if (toolName === "get_signals") {
             const sigs = (res.signals as Record<string, unknown>[]) || [];
-            successfulSignals.push(...sigs.map(s => ({ ...s, chainName: toolInput.chain || chainHint || "x-layer" })));
+            const seenAddresses = new Set(successfulSignals.map(s => String(s.address).toLowerCase()));
+            for (const s of sigs) {
+              const addr = String(s.address).toLowerCase();
+              if (addr && !seenAddresses.has(addr)) {
+                seenAddresses.add(addr);
+                successfulSignals.push({
+                  ...s,
+                  amountUsd: Math.round((Number(s.amountUsd) || 0) * 100) / 100,
+                  chainName: toolInput.chain || chainHint || "x-layer",
+                });
+              }
+            }
           } else if (toolName === "scan_token") {
             successfulScans.push({
                ...res,
@@ -355,15 +374,25 @@ export async function runAgentLoop(
         action = "run_quote";
         if (quoteResultData.blocked) {
           chatState = "FAILED";
-          const scanRes = quoteResultData.scanResult as Record<string, unknown>;
-          pipelineData = {
-            type: "risk-result",
-            tokenSymbol: quoteResultData.toAddress || "TOKEN",
-            tokenAddress: quoteResultData.toAddress,
-            riskLevel: "high_risk",
-            riskDetails: (scanRes?.triggeredLabels as string[])?.join(", "),
-            source: (scanRes?.meta as Record<string, unknown>)?.source
-          };
+          const scanResTo = quoteResultData.scanResultTo as Record<string, unknown> | undefined;
+          const scanResFrom = quoteResultData.scanResultFrom as Record<string, unknown> | undefined;
+          
+          if (scanResTo || scanResFrom) {
+            // It's blocked due to a high risk scan
+            const scanRes = scanResTo || scanResFrom;
+            pipelineData = {
+              type: "risk-result",
+              tokenSymbol: quoteResultData.toSymbol || "TOKEN",
+              tokenAddress: quoteResultData.toAddress,
+              riskLevel: "high_risk",
+              riskDetails: (scanRes?.triggeredLabels as string[])?.join(", "),
+              source: (scanRes?.meta as Record<string, unknown>)?.source
+            };
+          } else {
+            // It's blocked due to insufficient balance or missing wallet
+            // Just let the AI explain the error, no risk card needed.
+            pipelineData = null;
+          }
         } else {
           if (!walletAddress) {
              return {
@@ -376,7 +405,18 @@ export async function runAgentLoop(
           }
           chatState = "WAITING_FOR_CONFIRMATION";
           const slippage = quoteResultData.slippage !== undefined ? Number(quoteResultData.slippage) : 2; // Default to 2% if missing
-          const approvalId = await createApproval(String(quoteResultData.toAddress), String(quoteBlockInput!.chain), Number(quoteResultData.amount), slippage, walletAddress, quoteResultData.fromToken ? String(quoteResultData.fromToken) : undefined);
+          const approvalId = await createApproval(
+            String(quoteResultData.toAddress), 
+            String(quoteBlockInput!.chain), 
+            Number(quoteResultData.amount), 
+            slippage, 
+            walletAddress, 
+            quoteResultData.fromToken ? String(quoteResultData.fromToken) : undefined,
+            quoteResultData.routerAddress ? String(quoteResultData.routerAddress) : undefined,
+            Boolean(quoteResultData.needsApproval),
+            quoteResultData.approveAmountStr ? String(quoteResultData.approveAmountStr) : undefined,
+            quoteResultData.routerAddress ? String(quoteResultData.routerAddress) : undefined
+          );
           pipelineData = {
             type: "quote",
             quote: quoteResultData.quote,
@@ -432,10 +472,7 @@ export async function runAgentLoop(
         }
       }
 
-      messages.push({
-        role: "user",
-        content: toolResults,
-      });
+      messages.push(activeProvider.buildToolResultsMessage(toolResults));
     }
   }
 

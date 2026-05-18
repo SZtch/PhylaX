@@ -117,6 +117,7 @@ export function Navbar({
               ))}
               {/* Launch App — landing only */}
               <button
+                type="button"
                 onClick={onLaunch}
                 aria-label="Launch Agent Console"
                 className="ml-2 relative inline-flex items-center rounded-full bg-gradient-brand text-white px-5 py-2 text-sm font-medium hover:shadow-glow transition-all duration-200 hover:scale-[1.03] active:scale-[0.98]"
@@ -141,6 +142,7 @@ export function Navbar({
               {/* Chain Selector */}
               <div className="relative ml-2">
                 <button
+                  type="button"
                   onClick={(e) => { e.stopPropagation(); setChainOpen((o) => !o); }}
                   aria-label="Select chain"
                   aria-expanded={chainOpen}
@@ -161,6 +163,7 @@ export function Navbar({
                 >
                   {SUPPORTED_CHAINS.map((c) => (
                     <button
+                      type="button"
                       key={c.id}
                       disabled={!c.enabled}
                       onClick={() => { if (c.enabled) { onChainChange(c); setChainOpen(false); } }}
@@ -190,6 +193,7 @@ export function Navbar({
 
               {/* Connect Wallet */}
               <button
+                type="button"
                 onClick={onConnectWallet}
                 aria-label={walletConnected ? "Wallet connected" : "Connect wallet"}
                 className={`ml-1 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium border transition-all duration-200 ${
@@ -221,6 +225,7 @@ export function Navbar({
             <>
               {/* Compact chain icon */}
               <button
+                type="button"
                 onClick={(e) => { e.stopPropagation(); setChainOpen((o) => !o); }}
                 aria-label="Select chain"
                 className={`p-2 rounded-full transition-colors duration-150 ${scrolled ? "text-white/80" : "text-foreground/70"}`}
@@ -229,6 +234,7 @@ export function Navbar({
               </button>
               {/* Compact wallet icon */}
               <button
+                type="button"
                 onClick={onConnectWallet}
                 aria-label={walletConnected ? "Wallet connected" : "Connect wallet"}
                 className={`p-2 rounded-full transition-colors duration-150 ${
@@ -242,6 +248,7 @@ export function Navbar({
             </>
           )}
           <button
+            type="button"
             aria-label="Toggle navigation menu"
             onClick={() => setMobileOpen((o) => !o)}
             className={`p-2 rounded-full transition-colors duration-150 ${scrolled ? "text-white" : "text-foreground"}`}
@@ -273,6 +280,7 @@ export function Navbar({
                 </a>
               ))}
               <button
+                type="button"
                 onClick={() => { setMobileOpen(false); onLaunch?.(); }}
                 className="mt-2 rounded-xl bg-gradient-brand text-white px-5 py-3 text-center font-medium"
               >
@@ -289,6 +297,7 @@ export function Navbar({
                 <div className="flex gap-2">
                   {SUPPORTED_CHAINS.map((c) => (
                     <button
+                      type="button"
                       key={c.id}
                       disabled={!c.enabled}
                       onClick={() => { onChainChange(c); }}
@@ -309,6 +318,7 @@ export function Navbar({
               </div>
 
               <button
+                type="button"
                 onClick={() => { setMobileOpen(false); onConnectWallet(); }}
                 className={`mt-2 rounded-xl px-5 py-3 text-center font-medium border transition-colors duration-150 ${
                   walletConnected
@@ -332,6 +342,7 @@ export function Navbar({
       >
         {SUPPORTED_CHAINS.map((c) => (
           <button
+            type="button"
             key={c.id}
             disabled={!c.enabled}
             onClick={() => { if (c.enabled) { onChainChange(c); setChainOpen(false); } }}

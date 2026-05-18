@@ -3,6 +3,10 @@ import { isLiveExecutionEnabled } from "../../../lib/risk-policy";
 import { isRedisAvailable, isKillSwitchActive } from "../../../lib/redis";
 import { isDbAvailable } from "../../../lib/db";
 import { isMarketStructureAvailable, getHardCapUsd } from "../../../lib/live-execution";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 export async function GET(req: Request) {
   const liveExecutionEnabled = isLiveExecutionEnabled();
@@ -12,12 +16,21 @@ export async function GET(req: Request) {
                                 !!process.env.OKX_PROJECT_ID;
 
   let killSwitch = false;
-  try { killSwitch = await isKillSwitchActive(); } catch (e) {}
+  try { killSwitch = await isKillSwitchActive(); } catch (_e) { /* ignore */ }
+
+  let onchainosAvailable = false;
+  try {
+    await execFileAsync("onchainos", ["--version"], { timeout: 5000 });
+    onchainosAvailable = true;
+  } catch {
+    onchainosAvailable = false;
+  }
 
   const coarseStatus = {
-    status: killSwitch ? "degraded" : "ok",
+    status: killSwitch ? "degraded" : onchainosAvailable ? "ok" : "degraded",
     liveExecutionConfigured: liveExecutionEnabled,
     dependenciesConfigured,
+    onchainosAvailable,
   };
 
   const authHeader = req.headers.get("authorization");
@@ -37,6 +50,7 @@ export async function GET(req: Request) {
       approvalSecretConfigured: !!process.env.APPROVAL_SECRET,
       maxTradeUsdHardCapConfigured: getHardCapUsd() > 0,
       marketStructureScriptAvailable: isMarketStructureAvailable(),
+      onchainosCliAvailable: onchainosAvailable,
       killSwitchActive: killSwitch,
       environment: process.env.NODE_ENV,
       timestamp: new Date().toISOString()

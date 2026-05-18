@@ -12,8 +12,9 @@ import {
   ExternalLink,
   Lock,
 } from "lucide-react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { SimulationResult } from "../lib/schemas";
+import { addTx } from "../lib/tx-store";
 
 type ExecutionState =
   | "idle"
@@ -45,6 +46,7 @@ interface Props {
   chainConfig?: import("../lib/chains").ChainConfig;
   needsApproval?: boolean;
   approveTxData?: { to: string; data: string; value: string; chainId?: string; gas?: string; gasLimit?: string; gasPrice?: string; maxFeePerGas?: string; maxPriorityFeePerGas?: string; } | null;
+  onConfirmed?: () => void;
 }
 
 interface EthereumProvider {
@@ -81,6 +83,7 @@ export function QuoteCard({
   chainConfig,
   needsApproval,
   approveTxData,
+  onConfirmed,
 }: Props) {
   const slippageOk = quote.slippage < 3;
   const [execState, setExecState] = useState<ExecutionState>("idle");
@@ -92,16 +95,32 @@ export function QuoteCard({
   const [riskAcknowledged, setRiskAcknowledged] = useState(false);
   const [currentNeedsApproval, setCurrentNeedsApproval] = useState(!!needsApproval);
 
-  // Expiry handling
+  // Expiry + countdown timer (2 minutes)
+  const EXPIRY_MS = 2 * 60 * 1000;
   const [isExpired, setIsExpired] = useState(false);
-  useState(() => {
-    // 5 minutes expiry
-    const timer = setTimeout(() => {
+  const [secondsLeft, setSecondsLeft] = useState(Math.floor(EXPIRY_MS / 1000));
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const startTime = Date.now();
+    const expireTimer = setTimeout(() => {
       setIsExpired(true);
       setExecState("expired");
-    }, 5 * 60 * 1000);
-    return () => clearTimeout(timer);
-  });
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    }, EXPIRY_MS);
+
+    countdownRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, Math.floor((EXPIRY_MS - elapsed) / 1000));
+      setSecondsLeft(remaining);
+    }, 1000);
+
+    return () => {
+      clearTimeout(expireTimer);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const walletMismatch = targetWalletAddress && walletAddress && targetWalletAddress.toLowerCase() !== walletAddress.toLowerCase();
   const isHighRisk = scanDecision && scanDecision !== "safe";
@@ -156,6 +175,13 @@ export function QuoteCard({
         await ensureXLayer(provider);
         const txParams: Record<string, string> = { from: walletAddress, to: approveTxData.to, data: approveTxData.data };
         if (approveTxData.value) txParams.value = approveTxData.value;
+        // Forward gas parameters for approval tx so the wallet doesn't need to re-estimate
+        if (approveTxData.gas) txParams.gas = approveTxData.gas;
+        if (approveTxData.gasLimit) txParams.gasLimit = approveTxData.gasLimit;
+        if (approveTxData.gasPrice) txParams.gasPrice = approveTxData.gasPrice;
+        if (approveTxData.maxFeePerGas) txParams.maxFeePerGas = approveTxData.maxFeePerGas;
+        if (approveTxData.maxPriorityFeePerGas) txParams.maxPriorityFeePerGas = approveTxData.maxPriorityFeePerGas;
+        console.log("[approve-debug] txParams to wallet:", JSON.stringify(txParams, null, 2));
         const hash = await provider.request({ method: "eth_sendTransaction", params: [txParams] }) as string;
         setApprovalTxHash(hash);
         setCurrentNeedsApproval(false);
@@ -231,11 +257,15 @@ export function QuoteCard({
 
       const tx = execData.unsignedTx;
       const txParams: Record<string, string> = { from: walletAddress, to: tx.to, data: tx.data, value: tx.value };
+      // Forward gas parameters from server-built tx so the wallet doesn't need to re-estimate
       if (tx.gas) txParams.gas = tx.gas;
-      if (tx.gasLimit) txParams.gas = tx.gasLimit;
+      if (tx.gasLimit) txParams.gasLimit = tx.gasLimit;
       if (tx.gasPrice) txParams.gasPrice = tx.gasPrice;
       if (tx.maxFeePerGas) txParams.maxFeePerGas = tx.maxFeePerGas;
       if (tx.maxPriorityFeePerGas) txParams.maxPriorityFeePerGas = tx.maxPriorityFeePerGas;
+
+      console.log("[swap-debug] unsignedTx from server:", JSON.stringify(tx, null, 2));
+      console.log("[swap-debug] txParams to wallet:", JSON.stringify(txParams, null, 2));
 
       let hash: string;
       try {
@@ -259,24 +289,101 @@ export function QuoteCard({
         const confirmRes = await fetch("/api/confirm", { method: "POST", headers, body: JSON.stringify({ executionId: execData.executionId, txHash: hash, chainId: tx.chainId }) });
         const confirmData = await confirmRes.json() as { status?: string; explorerUrl?: string };
         if (confirmData.explorerUrl) setExplorerUrl(confirmData.explorerUrl);
-        if (confirmData.status === "confirmed") setExecState("confirmed");
+        if (confirmData.status === "confirmed") {
+          setExecState("confirmed");
+          const confirmedAt = new Date().toISOString();
+          const txRecord = {
+            id: hash,
+            fromSymbol: fromSymbol ?? "?",
+            toSymbol: toSymbol ?? "?",
+            amountUsd: amount ?? 0,
+            expectedOutputUsd: quote.expectedOutputUsd,
+            gasFeeUsd: quote.gasFeeUsd,
+            txHash: hash,
+            explorerUrl: confirmData.explorerUrl ?? null,
+            chain: chainConfig?.name ?? "X Layer",
+            confirmedAt,
+          };
+          addTx(txRecord);
+          // Persist to DB — fire and forget, non-blocking
+          fetch("/api/tx-history", {
+            method: "POST",
+            headers,
+            body: JSON.stringify(txRecord),
+          }).catch(() => {/* non-fatal */});
+          onConfirmed?.();
+        }
         else if (confirmData.status === "reverted" || confirmData.status === "failed") { setExecState("failed"); setExecError("Transaction reverted on-chain."); }
       } catch { /* tx submitted, user checks explorer */ }
     } catch (err) {
       setExecState("failed");
       setExecError(`Execution error: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [approvalId, walletAddress, getAccessToken, getIdentityToken, quote, riskAcknowledged, isExpired, isHighRisk, walletMismatch]);
+  }, [approvalId, walletAddress, getAccessToken, getIdentityToken, quote, riskAcknowledged, isExpired, isHighRisk, walletMismatch, currentNeedsApproval, approveTxData, approvalTxHash]);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white border border-border rounded-2xl overflow-hidden shadow-soft"
+      className="bg-card border border-border rounded-2xl overflow-hidden shadow-soft"
     >
-      <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
-        <Eye className="w-4 h-4 text-electric" />
-        <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">Trade Preview</h4>
+      {/* ── SUCCESS STATE: replace entire card ── */}
+      {execState === "confirmed" && (
+        <div className="p-4 space-y-3">
+          <div className="flex items-center gap-2" style={{ color: "oklch(0.6 0.17 160)" }}>
+            <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+            <span className="text-sm font-bold">Transaction confirmed</span>
+          </div>
+          <div className="rounded-xl px-3 py-2.5 text-xs space-y-0.5" style={{ background: "oklch(0.5 0.15 160 / 0.08)", border: "1px solid oklch(0.55 0.15 160 / 0.15)", color: "oklch(0.6 0.17 160)" }}>
+            <p><span className="font-semibold">{fromSymbol} → {toSymbol ?? "Target"}</span></p>
+            <p>Output: ~${quote.expectedOutputUsd.toFixed(2)}</p>
+            <p className="font-mono text-[10px] break-all" style={{ color: "oklch(0.55 0.15 160)" }}>{txHash}</p>
+          </div>
+          <div className="flex gap-2">
+            {explorerUrl && (
+              <a
+                href={explorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 py-2 px-3 rounded-lg text-[11px] font-bold flex items-center justify-center gap-2 transition-colors"
+                style={{ background: "oklch(0.5 0.15 160 / 0.1)", color: "oklch(0.6 0.17 160)", border: "1px solid oklch(0.55 0.15 160 / 0.2)" }}
+              >
+                Explorer <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
+          </div>
+          <p className="text-[10px] text-muted-foreground/50 text-center">Check History in Portfolio for details.</p>
+        </div>
+      )}
+
+      {/* ── NORMAL CARD STATE ── */}
+      {execState !== "confirmed" && (
+        <>
+      {/* Header with countdown */}
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between" style={{ background: "oklch(0 0 0 / 0.06)" }}>
+        <div className="flex items-center gap-2">
+          <Eye className="w-4 h-4 text-electric" />
+          <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">Trade Preview</h4>
+        </div>
+        {/* Countdown timer */}
+        {!isExpired && execState === "idle" && (
+          <div
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tabular-nums"
+            style={{
+              background: secondsLeft < 30 ? "oklch(0.55 0.22 27 / 0.08)" : "oklch(0.5 0.02 260 / 0.08)",
+              color: secondsLeft < 30 ? "oklch(0.7 0.2 27)" : "var(--app-text-secondary)",
+              border: `1px solid ${secondsLeft < 30 ? "oklch(0.55 0.22 27 / 0.2)" : "oklch(0.5 0.02 260 / 0.15)"}`,
+            }}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full inline-block ${secondsLeft < 30 ? "bg-red-400 animate-pulse" : "bg-muted-foreground/40"}`} />
+            {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}
+          </div>
+        )}
+        {isExpired && (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: "oklch(0.55 0.22 27 / 0.1)", color: "oklch(0.7 0.2 27)", border: "1px solid oklch(0.55 0.22 27 / 0.2)" }}>
+            <XCircle className="w-3 h-3" /> Expired
+          </span>
+        )}
       </div>
 
       <div className="p-4 space-y-3">
@@ -289,22 +396,22 @@ export function QuoteCard({
 
         {/* Metrics */}
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-muted/40 rounded-xl px-3 py-2.5">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Expected Output</p>
+          <div className="rounded-xl px-3 py-2.5" style={{ background: "oklch(0.5 0.02 260 / 0.1)" }}>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "oklch(0.6 0.015 260)" }}>Expected Output</p>
             <p className="text-sm font-bold text-foreground">${quote.expectedOutputUsd.toFixed(2)}</p>
           </div>
-          <div className="bg-muted/40 rounded-xl px-3 py-2.5">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Slippage</p>
-            <p className={`text-sm font-bold ${slippageOk ? "text-emerald-600" : "text-red-600"}`}>{quote.slippage.toFixed(2)}%</p>
+          <div className="rounded-xl px-3 py-2.5" style={{ background: "oklch(0.5 0.02 260 / 0.1)" }}>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "oklch(0.6 0.015 260)" }}>Slippage</p>
+            <p className="text-sm font-bold" style={{ color: slippageOk ? "oklch(0.6 0.17 160)" : "oklch(0.7 0.2 27)" }}>{quote.slippage.toFixed(2)}%</p>
           </div>
-          <div className="bg-muted/40 rounded-xl px-3 py-2.5">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Gas Fee</p>
+          <div className="rounded-xl px-3 py-2.5" style={{ background: "oklch(0.5 0.02 260 / 0.1)" }}>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "oklch(0.6 0.015 260)" }}>Gas Fee</p>
             <p className="text-sm font-bold text-foreground">${quote.gasFeeUsd.toFixed(4)}</p>
           </div>
         </div>
 
         {/* Route info */}
-        <div className="text-[10px] text-muted-foreground bg-muted/40 rounded-lg px-3 py-2 font-mono break-all">
+        <div className="text-[10px] rounded-lg px-3 py-2 font-mono break-all" style={{ color: "oklch(0.65 0.015 260)", background: "oklch(0.5 0.02 260 / 0.08)" }}>
           <p>Amount: {amount ? `$${amount}` : "Unknown"} {fromSymbol}</p>
           <p>Token: {tokenAddress || "Unknown"}</p>
           <p>Router: {quote.route}</p>
@@ -313,26 +420,26 @@ export function QuoteCard({
         {/* Chain & Security info */}
         <div className="space-y-1.5 text-xs">
           {chainConfig ? (
-            <div className="flex items-center gap-2 bg-muted/20 border border-border/50 rounded-lg px-3 py-2 text-muted-foreground">
+            <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: "oklch(0.5 0.02 260 / 0.08)", border: "1px solid oklch(0.5 0.02 260 / 0.12)", color: "oklch(0.65 0.015 260)" }}>
               <span className="font-semibold">{chainConfig.name}</span>
               <span>(ID: {chainConfig.id})</span>
             </div>
           ) : null}
 
           {scanDecision === "safe" ? (
-            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 text-emerald-700">
+            <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: "oklch(0.45 0.17 155 / 0.12)", border: "1px solid oklch(0.55 0.17 155 / 0.25)", color: "oklch(0.6 0.17 155)" }}>
               <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
               LOW risk by current scan
             </div>
           ) : scanDecision ? (
-            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-700 font-semibold">
+            <div className="flex items-center gap-2 rounded-lg px-3 py-2 font-semibold" style={{ background: "oklch(0.55 0.22 27 / 0.1)", border: "1px solid oklch(0.55 0.22 27 / 0.25)", color: "oklch(0.7 0.2 27)" }}>
               <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
               BLOCKED: {scanDecision === "high_risk" ? "MEDIUM/HIGH risk detected" : "Unknown risk state"}
             </div>
           ) : null}
 
           {walletAddress && targetWalletAddress && (
-            <div className={`flex items-center gap-2 border rounded-lg px-3 py-2 ${walletMismatch ? "bg-red-50 border-red-200 text-red-700 font-semibold" : "bg-muted/20 border-border/50 text-muted-foreground"}`}>
+            <div className={`flex items-center gap-2 border rounded-lg px-3 py-2 ${walletMismatch ? "font-semibold" : "text-muted-foreground"}`} style={walletMismatch ? { background: "oklch(0.55 0.22 27 / 0.08)", borderColor: "oklch(0.55 0.22 27 / 0.2)", color: "oklch(0.7 0.2 27)" } : { background: "oklch(0.5 0.02 260 / 0.06)", borderColor: "var(--app-card-border)" }}>
               <Lock className="w-3.5 h-3.5 flex-shrink-0" />
               <span>Verified Wallet: {targetWalletAddress.slice(0,6)}...{targetWalletAddress.slice(-4)}</span>
               {walletMismatch && <span className="ml-auto">Mismatch! Connect correct wallet.</span>}
@@ -342,14 +449,14 @@ export function QuoteCard({
 
         {/* Slippage warning */}
         {!slippageOk && (
-          <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2" style={{ background: "oklch(0.6 0.15 85 / 0.1)", border: "1px solid oklch(0.6 0.15 85 / 0.2)", color: "oklch(0.75 0.15 85)" }}>
             <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
             High slippage detected. Review carefully before confirming.
           </div>
         )}
 
         {isExpired && (
-          <div className="flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2" style={{ background: "oklch(0.55 0.22 27 / 0.1)", border: "1px solid oklch(0.55 0.22 27 / 0.2)", color: "oklch(0.7 0.2 27)" }}>
             <XCircle className="w-3.5 h-3.5 flex-shrink-0" />
             Quote expired, request a new quote.
           </div>
@@ -361,11 +468,11 @@ export function QuoteCard({
             <motion.div key="confirm-button" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="space-y-3 pt-3 border-t border-border/50">
               {walletAddress ? (
                 <>
-                  <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
+                  <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2.5" style={{ background: "oklch(0.62 0.19 260 / 0.08)", border: "1px solid oklch(0.62 0.19 260 / 0.15)" }}>
                     <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 text-blue-500 mt-0.5" />
                     <div>
-                      <p className="font-semibold text-blue-800 mb-0.5">User-Signed Execution (Trade Hard Cap Applies)</p>
-                      <p>Your wallet will ask you to review and sign. PhylaX never signs for you.</p>
+                      <p className="font-semibold mb-0.5" style={{ color: "oklch(0.7 0.15 260)" }}>User-Signed Execution (Trade Hard Cap Applies)</p>
+                      <p style={{ color: "oklch(0.6 0.1 260)" }}>Your wallet will ask you to review and sign. PhylaX never signs for you.</p>
                     </div>
                   </div>
                   
@@ -401,7 +508,8 @@ export function QuoteCard({
                     {walletMismatch && (
                       <button
                         onClick={onConnectWallet}
-                        className="w-full py-2 px-4 rounded-xl border border-red-200 text-red-600 text-[11px] font-bold hover:bg-red-50 transition-all flex items-center justify-center gap-2"
+                        className="w-full py-2 px-4 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-2"
+                        style={{ border: "1px solid oklch(0.55 0.22 27 / 0.3)", color: "oklch(0.7 0.2 27)" }}
                       >
                         Switch to {targetWalletAddress?.slice(0,6)}...
                       </button>
@@ -410,7 +518,7 @@ export function QuoteCard({
                 </>
               ) : (
                 <>
-                  <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+                  <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2.5" style={{ color: "oklch(0.75 0.18 85)", background: "oklch(0.6 0.18 85 / 0.08)", border: "1px solid oklch(0.6 0.18 85 / 0.15)" }}>
                     <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                     <p>Wallet connection required to sign and submit this transaction.</p>
                   </div>
@@ -443,11 +551,28 @@ export function QuoteCard({
 
           {execState === "awaiting_signature" && (
             <motion.div key="signing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-3 pt-3 border-t border-border/50">
-              <div className="flex items-center gap-2 text-sm text-amber-600 font-medium">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Waiting for wallet signature…
+              {/* Prominent signature prompt */}
+              <div
+                className="flex items-center gap-3 px-4 py-3.5 rounded-xl border"
+                style={{
+                  background: "oklch(0.98 0.02 85 / 0.5)",
+                  borderColor: "oklch(0.88 0.08 85)",
+                  animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+                }}
+              >
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "oklch(0.65 0.18 85 / 0.15)" }}>
+                  <Loader2 className="w-5 h-5 animate-spin" style={{ color: "oklch(0.55 0.18 85)" }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold" style={{ color: "oklch(0.45 0.18 85)" }}>
+                    Check your wallet
+                  </p>
+                  <p className="text-[11px]" style={{ color: "oklch(0.55 0.12 85)" }}>
+                    Signature required to proceed
+                  </p>
+                </div>
               </div>
-              <button 
+              <button
                 onClick={() => setExecState("idle")}
                 className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
               >
@@ -478,31 +603,9 @@ export function QuoteCard({
             </motion.div>
           )}
 
-          {execState === "confirmed" && (
-            <motion.div key="confirmed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3 pt-3 border-t border-border/50">
-              <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium">
-                <CheckCircle2 className="w-4 h-4" />
-                Success: Transaction confirmed
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {explorerUrl && (
-                  <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="flex-1 py-2 px-3 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-[11px] font-bold flex items-center justify-center gap-2 transition-colors">
-                    View on Explorer <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-                <button 
-                  onClick={() => window.location.reload()}
-                  className="flex-1 py-2 px-3 bg-electric text-white rounded-lg text-[11px] font-bold hover:shadow-glow flex items-center justify-center transition-all"
-                >
-                  New trade
-                </button>
-              </div>
-            </motion.div>
-          )}
-
           {(execState === "failed" || execState === "rejected" || execState === "wrong_chain" || execState === "expired") && (
             <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3 pt-3 border-t border-border/50">
-              <div className="flex items-center gap-2 text-sm text-red-600 font-medium">
+              <div className="flex items-center gap-2 text-sm font-medium" style={{ color: "oklch(0.7 0.2 27)" }}>
                 <XCircle className="w-4 h-4" />
                 {execState === "rejected" ? "Rejected by wallet" : execState === "wrong_chain" ? "Switch to X Layer" : execState === "expired" ? "Quote expired" : "Execution failed"}
               </div>
@@ -521,7 +624,8 @@ export function QuoteCard({
                 
                 <div className="flex gap-2">
                   <button 
-                    onClick={() => window.location.reload()}
+                    type="button"
+                    onClick={() => setExecState("idle")}
                     className="flex-1 py-2 px-3 border border-border rounded-lg text-[11px] font-bold text-muted-foreground hover:bg-muted/20 flex items-center justify-center"
                   >
                     Scan another token
@@ -540,13 +644,15 @@ export function QuoteCard({
                   <button onClick={() => setShowErrorDetail((v) => !v)} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
                     {showErrorDetail ? "▾ Hide error detail" : "▸ Show error detail"}
                   </button>
-                  {showErrorDetail && <p className="text-xs text-red-500 mt-1 font-mono break-all bg-red-50 p-2 rounded border border-red-100">{execError}</p>}
+                  {showErrorDetail && <p className="text-xs mt-1 font-mono break-all p-2 rounded" style={{ color: "oklch(0.7 0.2 27)", background: "oklch(0.55 0.22 27 / 0.06)", border: "1px solid oklch(0.55 0.22 27 / 0.12)" }}>{execError}</p>}
                 </div>
               )}
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+      </>
+      )}
     </motion.div>
   );
 }

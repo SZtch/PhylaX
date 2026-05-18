@@ -39,6 +39,12 @@ export async function POST(req: Request) {
 
   const session = auth.session!;
 
+  // ── 1b. Per-user rate limit post-auth (IP rate limit alone is spoofable) ─
+  const userAllowed = await checkRateLimit(`execute:user:${session.userId}`, 5, 60);
+  if (!userAllowed) {
+    return NextResponse.json({ error: "Too many execution requests. Please wait before trying again." }, { status: 429 });
+  }
+
   await audit({
     event: "execution_requested",
     privyUserId: session.userId,
@@ -62,86 +68,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Risk acknowledgement is required for execution." }, { status: 400 });
     }
 
-    const { validateAndConsumeApproval, markApprovalTxConsumed } = await import("../../../lib/approval-store");
+    const { peekApproval, validateAndConsumeApproval, markApprovalTxConsumed } = await import("../../../lib/approval-store");
     const { normalizeChain } = await import("../../../lib/chains");
     const { checkTxOnchain } = await import("../confirm/route");
 
-    // ── 3. Validate and atomically consume approval ───────────────────────
-    const { valid, reason, approval, code } = await validateAndConsumeApproval(approvalId);
-    if (!valid || !approval) {
-      let event: import("../../../lib/audit").AuditEvent = "execution_blocked";
-      if (code === "missing") event = "approval_missing";
-      else if (code === "replay") event = "approval_replay_blocked";
-      else if (code === "expired") event = "approval_expired";
-
-      await audit({
-        event: event,
-        privyUserId: session.userId,
-        walletAddress: session.walletAddress,
-        metadata: { reason: reason ?? "invalid_approval", approvalId },
-      });
-      return NextResponse.json({ error: reason }, { status: 403 });
+    // ── 3. Pre-flight: peek approval WITHOUT consuming to validate wallet ownership first.
+    //    This prevents TOCTOU where approval gets burned on wallet mismatch — user would
+    //    lose their approval and need to re-request a quote.
+    const peek = await peekApproval(approvalId);
+    if (!peek.found || !peek.approval) {
+      return NextResponse.json({ error: peek.reason ?? "Approval ID is missing or invalid." }, { status: 403 });
     }
 
-    let chainConfig;
-    try {
-      chainConfig = normalizeChain(approval.chain);
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 400 });
-    }
-
-    if (chainConfig.id !== "x-layer") {
-      return NextResponse.json({
-        error: "Live execution is currently available on X Layer only. Base/BSC/Solana support is Coming Soon."
-      }, { status: 403 });
-    }
-
-    if (approval.needsApproval && !approvalTxHash) {
-      return NextResponse.json({ error: "Approval transaction hash is missing but required for execution." }, { status: 400 });
-    }
-
-    if (approvalTxHash) {
-      // chainConfig already resolved above
-      
-      const onchainData = await checkTxOnchain(approvalTxHash, chainConfig.chainIndex);
-      if (onchainData.status !== "confirmed") {
-        return NextResponse.json({ error: "Approval transaction is not confirmed on-chain. Please wait or try again." }, { status: 400 });
-      }
-      if (onchainData.from && onchainData.from.toLowerCase() !== session.walletAddress.toLowerCase()) {
-        return NextResponse.json({ error: "Approval transaction sender does not match verified wallet." }, { status: 403 });
-      }
-      if (approval.fromToken && onchainData.to && onchainData.to.toLowerCase() !== approval.fromToken.toLowerCase()) {
-        return NextResponse.json({ error: "Approval transaction target does not match the expected token contract." }, { status: 403 });
-      }
-
-      if (approval.needsApproval && onchainData.input && onchainData.input.length >= 138) {
-        const method = onchainData.input.substring(0, 10);
-        if (method.toLowerCase() !== "0x095ea7b3") {
-          return NextResponse.json({ error: "Approval transaction has invalid method selector." }, { status: 403 });
-        }
-        const spender = "0x" + onchainData.input.substring(34, 74).toLowerCase();
-        if (approval.spender && spender !== approval.spender.toLowerCase()) {
-          return NextResponse.json({ error: "Approval transaction spender does not match expected router." }, { status: 403 });
-        }
-        const amountHex = "0x" + onchainData.input.substring(74, 138);
-        try {
-          const amountBigInt = BigInt(amountHex);
-          const expectedBigInt = BigInt(approval.approveAmount || "0");
-          if (amountBigInt < expectedBigInt) {
-            return NextResponse.json({ error: "Approval transaction amount is insufficient." }, { status: 403 });
-          }
-        } catch {}
-      }
-
-      // Mark consumed ONLY after successful validation
-      const isNew = await markApprovalTxConsumed(approvalTxHash);
-      if (!isNew) {
-        return NextResponse.json({ error: "Approval replay blocked." }, { status: 403 });
-      }
-    }
-
-    // P0 Phase 9: Always require non-empty walletAddress — never skip via truthy guard
-    const approvalWallet = approval.walletAddress;
+    // Validate wallet ownership before doing anything irreversible
+    const approvalWallet = peek.approval.walletAddress;
     if (!approvalWallet || typeof approvalWallet !== "string" || approvalWallet.trim() === "") {
       await audit({
         event: "execution_blocked",
@@ -162,6 +102,80 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Execution wallet does not match the approval wallet." }, { status: 403 });
     }
 
+    // ── 4. Chain validation (still pre-consume — no side effects yet) ──────
+    let chainConfig;
+    try {
+      chainConfig = normalizeChain(peek.approval.chain);
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+
+    if (chainConfig.id !== "x-layer") {
+      return NextResponse.json({
+        error: "Live execution is currently available on X Layer only. Base/BSC/Solana support is Coming Soon."
+      }, { status: 403 });
+    }
+
+    if (peek.approval.needsApproval && !approvalTxHash) {
+      return NextResponse.json({ error: "Approval transaction hash is missing but required for execution." }, { status: 400 });
+    }
+
+    // ── 5. Onchain approval tx validation (still pre-consume) ─────────────
+    if (approvalTxHash) {
+      const onchainData = await checkTxOnchain(approvalTxHash, chainConfig.chainIndex);
+      if (onchainData.status !== "confirmed") {
+        return NextResponse.json({ error: "Approval transaction is not confirmed on-chain. Please wait or try again." }, { status: 400 });
+      }
+      if (onchainData.from && onchainData.from.toLowerCase() !== session.walletAddress.toLowerCase()) {
+        return NextResponse.json({ error: "Approval transaction sender does not match verified wallet." }, { status: 403 });
+      }
+      if (peek.approval.fromToken && onchainData.to && onchainData.to.toLowerCase() !== peek.approval.fromToken.toLowerCase()) {
+        return NextResponse.json({ error: "Approval transaction target does not match the expected token contract." }, { status: 403 });
+      }
+
+      if (peek.approval.needsApproval && onchainData.input && onchainData.input.length >= 138) {
+        const method = onchainData.input.substring(0, 10);
+        if (method.toLowerCase() !== "0x095ea7b3") {
+          return NextResponse.json({ error: "Approval transaction has invalid method selector." }, { status: 403 });
+        }
+        const spender = "0x" + onchainData.input.substring(34, 74).toLowerCase();
+        if (peek.approval.spender && spender !== peek.approval.spender.toLowerCase()) {
+          return NextResponse.json({ error: "Approval transaction spender does not match expected router." }, { status: 403 });
+        }
+        const amountHex = "0x" + onchainData.input.substring(74, 138);
+        try {
+          const amountBigInt = BigInt(amountHex);
+          const expectedBigInt = BigInt(peek.approval.approveAmount || "0");
+          if (amountBigInt < expectedBigInt) {
+            return NextResponse.json({ error: "Approval transaction amount is insufficient." }, { status: 403 });
+          }
+        } catch {}
+      }
+
+      // Mark approval tx consumed ONLY after full validation
+      const isNew = await markApprovalTxConsumed(approvalTxHash);
+      if (!isNew) {
+        return NextResponse.json({ error: "Approval replay blocked." }, { status: 403 });
+      }
+    }
+
+    // ── 6. All pre-flight checks passed — now atomically consume the approval ─
+    const { valid, reason, approval, code } = await validateAndConsumeApproval(approvalId);
+    if (!valid || !approval) {
+      let event: import("../../../lib/audit").AuditEvent = "execution_blocked";
+      if (code === "missing") event = "approval_missing";
+      else if (code === "replay") event = "approval_replay_blocked";
+      else if (code === "expired") event = "approval_expired";
+
+      await audit({
+        event: event,
+        privyUserId: session.userId,
+        walletAddress: session.walletAddress,
+        metadata: { reason: reason ?? "invalid_approval", approvalId },
+      });
+      return NextResponse.json({ error: reason }, { status: 403 });
+    }
+
     // Spend amount is budgetUsd
     const spendAmountUsd = approval.budgetUsd;
 
@@ -172,7 +186,7 @@ export async function POST(req: Request) {
     // chainConfig already resolved above
     const chainIndex = chainConfig.chainIndex;
 
-    // ── 4. Check if live execution is enabled ─────────────────────────────
+    // ── 7. Check if live execution is enabled ─────────────────────────────
     if (!isLiveExecutionEnabled()) {
       return NextResponse.json({
         result: {
@@ -193,7 +207,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // ── 5. Enforce risk policy ────────────────────────────────────────────
+    // ── 8. Enforce risk policy ────────────────────────────────────────────
     const slippage = approval.slippageLimitPercent;
     const quoteCreatedAt = approval.createdAt;
 

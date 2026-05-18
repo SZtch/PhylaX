@@ -17,16 +17,32 @@ const CLI_TIMEOUT_MS = 15_000;
 
 // Strict allowlist of permitted first two argv tokens (group + subcommand)
 const ALLOWED_COMMANDS = new Set([
+  // okx-dex-signal
   "signal list",
   "signal chains",
+  // okx-dex-token
   "token search",
-  "market price-info",
+  "market price",
+  "market prices",
+  // okx-security
   "security token-scan",
+  // okx-dex-swap
   "swap quote",
   "swap swap",
   "swap check-approvals",
   "swap approve",
+  // okx-wallet-portfolio
   "portfolio token-balances",
+  "portfolio all-balances",
+  // okx-onchain-gateway
+  "gateway gas",
+  "gateway gas-limit",
+  "gateway simulate",
+  "gateway chains",
+  // okx-agentic-wallet (read-only)
+  "wallet status",
+  "wallet balance",
+  "wallet chains",
 ]);
 
 export class OkxCliError extends Error {

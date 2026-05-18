@@ -69,6 +69,46 @@ export async function createApproval(
   return id;
 }
 
+/**
+ * Read-only approval lookup — does NOT consume the approval.
+ * Use this to validate wallet ownership BEFORE calling validateAndConsumeApproval.
+ * Returns the approval if it exists and is not yet expired/consumed.
+ */
+export async function peekApproval(id: string): Promise<{ found: boolean; approval?: Approval; reason?: string }> {
+  const live = isLiveExecutionEnabled();
+  const redis = getRedis();
+
+  if (live && !redis) {
+    return { found: false, reason: "Redis is required for live execution but is unavailable." };
+  }
+
+  if (redis) {
+    // Check if already consumed
+    const consumed = await redis.get(`phylax:approval:consumed:${id}`);
+    if (consumed) return { found: false, reason: "Approval ID has already been used." };
+
+    const data = await redis.get(`phylax:approval:${id}`);
+    if (!data) return { found: false, reason: "Approval ID is missing or invalid." };
+
+    try {
+      const approval = JSON.parse(data) as Approval;
+      if (Date.now() > approval.expiresAt) {
+        return { found: false, reason: "Approval ID is expired." };
+      }
+      return { found: true, approval };
+    } catch {
+      return { found: false, reason: "Failed to parse approval data." };
+    }
+  }
+
+  // Memory fallback (demo mode only)
+  const approval = memoryStore.get(id);
+  if (!approval) return { found: false, reason: "Approval ID is missing or invalid." };
+  if (approval.used) return { found: false, reason: "Approval ID has already been used." };
+  if (Date.now() > approval.expiresAt) return { found: false, reason: "Approval ID is expired." };
+  return { found: true, approval };
+}
+
 export async function validateAndConsumeApproval(id: string): Promise<{ valid: boolean; reason?: string; approval?: Approval; code?: "missing" | "replay" | "expired" }> {
   if (typeof global !== "undefined" && (global as any).__mockValidateAndConsumeApproval) {
     return (global as any).__mockValidateAndConsumeApproval(id);

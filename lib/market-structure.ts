@@ -6,7 +6,7 @@ import * as fs from "fs";
 const execFileAsync = promisify(execFile);
 
 export const SUPPORTED_MSA_TOKENS = new Set([
-  "BTC", "ETH", "SOL", "BNB", "DOGE", "AVAX", "ARB", "XRP", "LINK", "PEPE"
+  "BTC", "ETH", "SOL", "BNB", "DOGE", "AVAX", "ARB", "XRP", "LINK", "PEPE", "OKB"
 ]);
 
 export interface MarketStructureResult {

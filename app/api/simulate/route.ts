@@ -38,30 +38,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
     }
 
-    // Block unscanned tokens
-    if (!isScanned) {
-      return NextResponse.json(
-        { error: "Token has not been scanned. Security scan is required before simulation." },
-        { status: 403 }
-      );
+    const { normalizeChain } = await import("../../../lib/chains");
+    let chainConfig;
+    try {
+      chainConfig = normalizeChain(chain);
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
 
-    // Block high_risk tokens
-    if (riskLevel === "high_risk") {
-      return NextResponse.json(
-        { error: "Token is high risk. Simulation and execution are blocked." },
-        { status: 403 }
-      );
+    if (chainConfig.id !== "x-layer") {
+      return NextResponse.json({
+        error: "Live execution is currently available on X Layer only. Base/BSC/Solana support is Coming Soon."
+      }, { status: 403 });
     }
 
-    // Block unknown risk (empty scan result — watchlist only)
-    if (riskLevel === "unknown") {
+    const { scanToken } = await import("../../../lib/okx");
+    const scanResult = await scanToken(address, chainConfig.id);
+
+    if (!scanResult.executionAllowed) {
       return NextResponse.json(
-        {
-          error:
-            "Token risk is unknown — OKX security scan returned no data. " +
-            "Token is watchlisted. Simulation and execution are blocked until risk is verified.",
-        },
+        { error: `Token risk is ${scanResult.riskLevel}. Simulation and execution are blocked.` },
         { status: 403 }
       );
     }
@@ -74,10 +70,11 @@ export async function POST(req: Request) {
       requestFromSymbol
     );
 
+    const SERVER_HARD_CAP = Math.max(1, parseFloat(process.env.MAX_TRADE_USD_HARD_CAP || "100"));
     const guardrails = checkGuardrails(
-      amount,
       fromAmountUsd,
-      slippageLimitPercent,
+      SERVER_HARD_CAP,
+      slippageLimitPercent !== undefined ? slippageLimitPercent : 2,
       simulation.slippage
     );
     if (!guardrails.valid) {

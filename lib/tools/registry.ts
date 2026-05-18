@@ -26,6 +26,131 @@ export function registerTool<T>(tool: ToolDefinition<T>) {
   registry.set(tool.name, tool as ToolDefinition<unknown>);
 }
 
+// 0. get_wallet_balance
+registerTool({
+  name: "get_wallet_balance",
+  description: "Get the user's real-time wallet balances (Native OKB and popular ERC20 tokens like USDC, USDT, WETH, WBTC) on a specific chain.",
+  input_schema: {
+    type: "object",
+    properties: {
+      chain: { type: "string", description: "Chain to get balances for, e.g. x-layer" },
+      address: { type: "string", description: "Optional wallet address to check. If not provided, checks the user's connected wallet." }
+    },
+    required: ["chain"],
+  },
+  execute: async (input: { chain: string, address?: string }, context?: ToolContext) => {
+    try {
+      const targetAddress = input.address || context?.walletAddress;
+      if (!targetAddress) {
+        return { error: "No wallet address connected. Tell the user to sign in or provide a wallet address." };
+      }
+      const chainConfig = normalizeChain(input.chain || "x-layer");
+      if (chainConfig.id !== "x-layer") {
+        return { error: `Balance lookups for ${chainConfig.name} are coming soon. Switch to X Layer.` };
+      }
+
+      const { runCli } = await import("../cli-runner");
+      const { createPublicClient, http, formatUnits } = await import("viem");
+
+      // ── 1. Native OKB balance via RPC ────────────────────────────────────
+      const client = createPublicClient({ transport: http("https://rpc.xlayer.tech") });
+      const okbRaw = await client.getBalance({ address: targetAddress as `0x${string}` });
+      const okbAmount = Number(formatUnits(okbRaw, 18));
+
+      // ── 2. ERC20 balances via onchainos portfolio token-balances ──────────
+      // Dynamic decimals from OKX — no hardcoding needed
+      const erc20Tokens = [
+        { symbol: "USDC", address: "0x74b7f16337b8972027f6196a17a631ac6de26d22" },
+        { symbol: "USDT", address: "0x1e4a5963abfd975d8c9021ce480b42188849d41d" },
+      ];
+      const tokenAmounts: Record<string, number> = { OKB: okbAmount };
+
+      for (const token of erc20Tokens) {
+        try {
+          const tokenArg = `${chainConfig.chainIndex}:${token.address}`;
+          const raw = await runCli([
+            "portfolio", "token-balances",
+            "--address", targetAddress.toLowerCase(),
+            "--tokens", tokenArg,
+          ]);
+          const obj = raw as Record<string, unknown>;
+          const items: unknown[] = Array.isArray(obj.data) ? obj.data : [];
+          if (items.length > 0) {
+            const item = items[0] as Record<string, unknown>;
+            const assets = Array.isArray(item.tokenAssets) ? item.tokenAssets : [item];
+            if (assets.length > 0) {
+              const asset = assets[0] as Record<string, unknown>;
+              tokenAmounts[token.symbol] = parseFloat(String(asset.balance ?? asset.amount ?? "0"));
+            } else {
+              tokenAmounts[token.symbol] = 0;
+            }
+          } else {
+            tokenAmounts[token.symbol] = 0;
+          }
+        } catch {
+          tokenAmounts[token.symbol] = 0;
+        }
+      }
+
+      // ── 3. OKB price via onchainos market price ──────────────────────
+      // Falls back to CoinGecko, then hardcoded if both fail
+      const pricesUsd: Record<string, number> = { USDC: 1, USDT: 1 };
+      let okbPriceUsd = 0;
+
+      try {
+        const priceRaw = await runCli([
+          "market", "price",
+          "--chain", chainConfig.chainSlug,
+          "--address", "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        ]);
+        const obj = priceRaw as Record<string, unknown>;
+        const items: unknown[] = Array.isArray(obj.data) ? obj.data : [];
+        if (items.length > 0) {
+          const info = items[0] as Record<string, unknown>;
+          okbPriceUsd = parseFloat(String(info.price ?? info.priceUsd ?? info.tokenPrice ?? "0"));
+        }
+      } catch {}
+
+      if (!okbPriceUsd || isNaN(okbPriceUsd)) {
+        // Fallback: CoinGecko
+        try {
+          const cgRes = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=okb&vs_currencies=usd");
+          if (cgRes.ok) {
+            const cgData = await cgRes.json();
+            if (cgData?.okb?.usd) okbPriceUsd = cgData.okb.usd;
+          }
+        } catch {}
+      }
+
+      pricesUsd["OKB"] = okbPriceUsd > 0 ? okbPriceUsd : 83; // last-resort fallback (~current OKB price)
+
+      // ── 4. Estimated USD values ───────────────────────────────────────────
+      const estimatedUsd: Record<string, string> = {};
+      let total = 0;
+      for (const [sym, amount] of Object.entries(tokenAmounts)) {
+        const usd = amount * (pricesUsd[sym] ?? 1);
+        estimatedUsd[sym] = usd.toFixed(2);
+        total += usd;
+      }
+      estimatedUsd["total"] = total.toFixed(2);
+
+      return {
+        walletAddress: targetAddress,
+        chain: chainConfig.name,
+        balances: {
+          "OKB": okbAmount.toFixed(4),
+          "USDC": (tokenAmounts["USDC"] ?? 0).toFixed(2),
+          "USDT": (tokenAmounts["USDT"] ?? 0).toFixed(2),
+        },
+        prices_usd: pricesUsd,
+        estimated_usd: estimatedUsd,
+      };
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  },
+});
+
 // 1. get_signals
 registerTool({
   name: "get_signals",
@@ -128,14 +253,15 @@ registerTool({
       to_address: { type: "string", description: "Target token contract address (0x...)" },
       from_address: { type: "string", description: "Source token contract address (0x...), leave undefined to use default" },
       from_symbol: { type: "string", description: "Source token symbol (e.g. USDC)" },
-      amount: { type: "number", description: "Amount of fromToken to swap" },
+      amount: { type: "number", description: "Amount of fromToken to swap. Use this OR amount_usd, not both." },
+      amount_usd: { type: "number", description: "Amount in USD to swap. The tool will auto-convert to token amount using live prices. Use this if the user specifies a fiat amount like '$1'." },
       chain: { type: "string", description: "Chain for the swap" },
       slippage: { type: "number", description: "Slippage tolerance in percent (e.g. 3)" },
       risk_mode: { type: "string", description: "Risk mode: conservative, moderate, degen" },
     },
-    required: ["to_address", "amount", "chain"],
+    required: ["to_address", "chain"],
   },
-  execute: async (input: { to_address: string; from_address?: string; from_symbol?: string; amount: number; chain: string, slippage?: number, risk_mode?: string }, context?: ToolContext) => {
+  execute: async (input: { to_address: string; from_address?: string; from_symbol?: string; amount?: number; amount_usd?: number; chain: string, slippage?: number, risk_mode?: string }, context?: ToolContext) => {
     let chainConfig;
     try {
       chainConfig = normalizeChain(input.chain);
@@ -150,9 +276,29 @@ registerTool({
       };
     }
     const chain = chainConfig.id;
-    const amount = input.amount;
-    const fromSymbol = input.from_symbol || chainConfig.defaultFromSymbol;
-    const fromAddress = input.from_address || chainConfig.defaultFromToken;
+    const fromSymbol = (input.from_symbol || chainConfig.defaultFromSymbol).toUpperCase();
+    let fromAddress = input.from_address || chainConfig.defaultFromToken;
+    if (!input.from_address && fromSymbol === "OKB") {
+      fromAddress = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    }
+
+    let amount = input.amount || 0;
+    if (input.amount_usd) {
+      try {
+        const symbolMap: Record<string, string> = { "OKB": "okb", "ETH": "ethereum", "USDC": "usd-coin", "USDT": "tether", "WBTC": "wrapped-bitcoin" };
+        const cgId = symbolMap[fromSymbol] || "okb";
+        const cgRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=usd`);
+        const cgData = await cgRes.json();
+        const price = cgData[cgId]?.usd || 1;
+        amount = input.amount_usd / price;
+      } catch (err) {
+        return { error: "Failed to fetch live fiat price for conversion.", blocked: true };
+      }
+    }
+
+    if (amount <= 0) {
+      return { error: "Amount must be greater than 0", blocked: true };
+    }
 
     if (!context?.walletAddress) {
       return {
@@ -229,6 +375,37 @@ registerTool({
         };
       }
 
+      const { getSwapTxData, checkAllowance, getApproveTxData, getTokenDecimals, toMinimalUnits } = await import("../okx");
+      const slippageLimit = input.slippage !== undefined ? input.slippage : 2;
+      const swapData = await getSwapTxData(input.to_address, amount, chain, context.walletAddress, fromAddress, slippageLimit);
+      
+      let routerAddress: string | undefined = undefined;
+      let allowanceResult = { hasSufficient: true };
+      let approveTxData = null;
+      let decimals = 18;
+      let approveAmountStr: string | undefined = undefined;
+
+      if (swapData.txData && swapData.txData.to) {
+        routerAddress = swapData.txData.to;
+        const isNativeFrom = !fromAddress || fromAddress.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        
+        if (isNativeFrom) {
+          allowanceResult = { hasSufficient: true };
+        } else {
+          decimals = await getTokenDecimals(chain, fromAddress);
+          allowanceResult = await checkAllowance(chain, context.walletAddress, fromAddress, amount, decimals);
+          if (!allowanceResult.hasSufficient) {
+            const approveData = await getApproveTxData(chain, fromAddress, amount, decimals);
+            approveTxData = approveData.txData;
+            try {
+              approveAmountStr = toMinimalUnits(amount, decimals);
+            } catch {}
+          }
+        }
+      } else if (swapData.error) {
+        return { error: swapData.error, blocked: true };
+      }
+
       return {
         quote: quoteResult.quote,
         fromToken: quoteResult.fromToken,
@@ -241,7 +418,11 @@ registerTool({
         slippage: input.slippage,
         riskMode: input.risk_mode,
         scanDecision,
-        meta: quoteResult.meta
+        meta: quoteResult.meta,
+        routerAddress,
+        needsApproval: !allowanceResult.hasSufficient,
+        approveAmountStr,
+        approveTxData
       };
     } catch (err: any) {
       return { error: err.message, blocked: true };
@@ -266,6 +447,210 @@ registerTool({
   execute: async (input: { symbols: string[]; depth?: string }) => {
     const results = await checkMarketStructure(input.symbols);
     return { results, depth: input.depth || "quick" };
+  },
+});
+
+// 6. get_token_price
+registerTool({
+  name: "get_token_price",
+  description: "Get the real-time fiat (USD) price of one or more tokens.",
+  input_schema: {
+    type: "object",
+    properties: {
+      symbols: { type: "array", items: { type: "string" }, description: "Array of token symbols to get prices for (e.g. ['OKB', 'ETH', 'USDC'])" },
+    },
+    required: ["symbols"],
+  },
+  execute: async (input: { symbols: string[] }) => {
+    try {
+      const { runCli } = await import("../cli-runner");
+      const chainIndex = "196"; // X Layer
+
+      // Token address map for market price
+      const addressMap: Record<string, string> = {
+        "OKB":  "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "USDC": "0x74b7f16337b8972027f6196a17a631ac6de26d22",
+        "USDT": "0x1e4a5963abfd975d8c9021ce480b42188849d41d",
+        "WETH": "0x5a77f1443d16ee5761d310e38b62f77f726bc71c",
+        "WBTC": "0x8f8526dbfd6e38e3d8307702ca8469bae6c56c15",
+      };
+
+      const results: Record<string, number> = {};
+
+      for (const symbol of input.symbols) {
+        const upper = symbol.toUpperCase();
+        const addr = addressMap[upper] ?? null;
+
+        // Try OKX market price first
+        if (addr !== null) {
+          try {
+            const raw = await runCli([
+              "market", "price",
+              "--chain", "xlayer",
+              "--address", addr,
+            ]);
+            const obj = raw as Record<string, unknown>;
+            const items: unknown[] = Array.isArray(obj.data) ? obj.data : [];
+            if (items.length > 0) {
+              const info = items[0] as Record<string, unknown>;
+              const price = parseFloat(String(info.price ?? info.priceUsd ?? info.tokenPrice ?? "0"));
+              if (price > 0) {
+                results[upper] = price;
+                continue;
+              }
+            }
+          } catch {}
+        }
+
+        // Fallback: CoinGecko
+        try {
+          const cgMap: Record<string, string> = {
+            "OKB": "okb", "ETH": "ethereum", "USDC": "usd-coin",
+            "USDT": "tether", "WBTC": "wrapped-bitcoin", "SOL": "solana", "BTC": "bitcoin",
+          };
+          const cgId = cgMap[upper] || upper.toLowerCase();
+          const cgRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=usd`);
+          if (cgRes.ok) {
+            const cgData = await cgRes.json();
+            if (cgData[cgId]?.usd) results[upper] = cgData[cgId].usd;
+          }
+        } catch {}
+      }
+
+      return { prices_usd: results };
+    } catch (err) {
+      return { error: "Failed to fetch real-time prices." };
+    }
+  },
+});
+
+// 7. estimate_gas — okx-onchain-gateway
+registerTool({
+  name: "estimate_gas",
+  description: "Estimate current gas prices on a chain, or estimate gas limit for a specific transaction. Uses OKX Onchain Gateway.",
+  input_schema: {
+    type: "object",
+    properties: {
+      chain: { type: "string", description: "Chain to estimate gas for (e.g. x-layer, ethereum, base)" },
+      from: { type: "string", description: "Optional: sender address for gas limit estimation" },
+      to: { type: "string", description: "Optional: recipient/contract address for gas limit estimation" },
+      data: { type: "string", description: "Optional: calldata hex for gas limit estimation" },
+    },
+    required: ["chain"],
+  },
+  execute: async (input: { chain: string; from?: string; to?: string; data?: string }) => {
+    try {
+      const chainConfig = normalizeChain(input.chain || "x-layer");
+      const { runCli } = await import("../cli-runner");
+
+      // If from+to provided, estimate gas limit for specific tx
+      if (input.from && input.to) {
+        const args = [
+          "gateway", "gas-limit",
+          "--from", input.from.toLowerCase(),
+          "--to", input.to.toLowerCase(),
+          "--chain", chainConfig.chainSlug,
+        ];
+        if (input.data) args.push("--data", input.data);
+        const raw = await runCli(args);
+        const obj = raw as Record<string, unknown>;
+        return { type: "gas_limit", chain: chainConfig.name, data: obj.data ?? obj };
+      }
+
+      // Otherwise, get current gas prices
+      const raw = await runCli([
+        "gateway", "gas",
+        "--chain", chainConfig.chainSlug,
+      ]);
+      const obj = raw as Record<string, unknown>;
+      return { type: "gas_price", chain: chainConfig.name, data: obj.data ?? obj };
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  },
+});
+
+// 8. simulate_transaction — okx-onchain-gateway
+registerTool({
+  name: "simulate_transaction",
+  description: "Simulate (dry-run) a transaction to check if it would succeed or revert, without broadcasting. Uses OKX Onchain Gateway.",
+  input_schema: {
+    type: "object",
+    properties: {
+      chain: { type: "string", description: "Chain to simulate on" },
+      from: { type: "string", description: "Sender wallet address" },
+      to: { type: "string", description: "Target contract address" },
+      data: { type: "string", description: "Transaction calldata (hex)" },
+      value: { type: "string", description: "Native token value in wei (default: 0)" },
+    },
+    required: ["chain", "from", "to", "data"],
+  },
+  execute: async (input: { chain: string; from: string; to: string; data: string; value?: string }) => {
+    try {
+      const chainConfig = normalizeChain(input.chain || "x-layer");
+      const { runCli } = await import("../cli-runner");
+      const args = [
+        "gateway", "simulate",
+        "--from", input.from.toLowerCase(),
+        "--to", input.to.toLowerCase(),
+        "--data", input.data,
+        "--chain", chainConfig.chainSlug,
+      ];
+      if (input.value) args.push("--value", input.value);
+      const raw = await runCli(args);
+      const obj = raw as Record<string, unknown>;
+      return { chain: chainConfig.name, simulation: obj.data ?? obj };
+    } catch (err: any) {
+      return { error: err.message, reverted: true };
+    }
+  },
+});
+
+// 9. get_wallet_status — okx-agentic-wallet
+registerTool({
+  name: "get_wallet_status",
+  description: "Check OKX Agentic Wallet login status and account information. Shows whether wallet is logged in, active account, and supported chains.",
+  input_schema: {
+    type: "object",
+    properties: {},
+    required: [],
+  },
+  execute: async () => {
+    try {
+      const { runCli } = await import("../cli-runner");
+      const raw = await runCli(["wallet", "status"]);
+      const obj = raw as Record<string, unknown>;
+      return { status: obj.data ?? obj };
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  },
+});
+
+// 10. get_audit_log_info — okx-audit-log
+registerTool({
+  name: "get_audit_log_info",
+  description: "Get the location and format of the OKX onchainos audit log file for troubleshooting. Returns the file path, format, and rotation info.",
+  input_schema: {
+    type: "object",
+    properties: {},
+    required: [],
+  },
+  execute: async () => {
+    const isWindows = process.platform === "win32";
+    const homeDir = isWindows
+      ? process.env.USERPROFILE || "C:\\Users\\<user>"
+      : process.env.HOME || "~";
+    const onchainosHome = process.env.ONCHAINOS_HOME || `${homeDir}${isWindows ? "\\" : "/"}.onchainos`;
+    const logPath = `${onchainosHome}${isWindows ? "\\" : "/"}audit.jsonl`;
+
+    return {
+      logPath,
+      format: "JSON Lines (one JSON object per line)",
+      fields: ["ts (local time with timezone)", "source (cli/mcp)", "command", "ok", "duration_ms", "args (redacted)", "error"],
+      rotation: "Max 10,000 lines, auto-keeps device header + most recent 5,000 entries",
+      deviceHeader: "First line contains {type:'device', os, arch, version}",
+    };
   },
 });
 

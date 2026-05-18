@@ -34,6 +34,18 @@ const TOKEN_ALIASES: Record<string, string> = {
   dai: "DAI",
 };
 
+/**
+ * Hardcoded X Layer token addresses for the top tokens.
+ * Prevents CLI calls for common symbol → address resolution.
+ */
+export const XLAYER_TOKEN_ADDRESSES: Record<string, string> = {
+  OKB:  "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  USDC: "0x74b7f16337b8972027f6196a17a631ac6de26d22",
+  USDT: "0x1e4a5963abfd975d8c9021ce480b42188849d41d",
+  WETH: "0x5a77f1443d16ee5761d310e38b62f77f726bc71c",
+  WBTC: "0x8f8526dbfd6e38e3d8307702ca8469bae6c56c15",
+};
+
 const CHAIN_ALIASES: Record<string, string> = {
   "x layer": "xlayer",
   xlayer: "xlayer",

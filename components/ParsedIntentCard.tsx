@@ -14,7 +14,8 @@ export function ParsedIntentCard({ intent }: { intent: ThesisIntent | null }) {
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white/60 backdrop-blur border border-border rounded-2xl p-5 shadow-soft"
+      className="border border-border rounded-2xl p-5 shadow-soft"
+      style={{ background: "var(--card)" }}
     >
       <h3 className="text-xs font-bold text-muted-foreground mb-4 flex items-center gap-2 uppercase tracking-[0.15em]">
         <span className="bg-electric/10 text-electric p-1.5 rounded-lg">

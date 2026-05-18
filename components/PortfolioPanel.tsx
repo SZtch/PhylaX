@@ -1,18 +1,21 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import {
-  Wallet,
-  Clock,
-  Plus,
-  Search,
-  ChevronDown,
-  X,
-  Coins,
-} from "lucide-react";
-import { CopyAddress } from "./CopyAddress";
+import { useState, useEffect, useCallback } from "react";
+import { RefreshCw, ExternalLink, Wallet, ChevronRight, AlertCircle, Loader2, ArrowRightLeft, Plus, TrendingUp, ArrowUpRight, Clock, Copy, Check, ChevronDown } from "lucide-react";
+import { TokenIcon } from "./icons/TokenIcons";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+interface TxRecord {
+  id: string;
+  fromSymbol: string;
+  toSymbol: string;
+  amountUsd: number;
+  expectedOutputUsd: number;
+  gasFeeUsd: number;
+  txHash: string;
+  explorerUrl: string | null;
+  chain: string;
+  confirmedAt: string;
+}
 
 interface Props {
   isAuthenticated: boolean;
@@ -22,374 +25,523 @@ interface Props {
   executionMode: string;
   onConnectWallet: () => void;
   onSignIn: () => void;
+  getAccessToken?: () => Promise<string | null>;
 }
 
-type TimeSpan = "1D" | "1W" | "1M";
-type Currency = "USD" | "EUR" | "GBP";
-
-// ─── Placeholder assets (symbols only — no fake balances) ─────────────────────
-
-const POPULAR_ASSETS = [
-  { symbol: "OKB", name: "OKB", color: "#000" },
-  { symbol: "ETH", name: "Ethereum", color: "#627EEA" },
-  { symbol: "USDC", name: "USD Coin", color: "#2775CA" },
-  { symbol: "USDT", name: "Tether", color: "#26A17B" },
-  { symbol: "WBTC", name: "Wrapped Bitcoin", color: "#F7931A" },
-];
-
-// ─── Component ────────────────────────────────────────────────────────────────
+interface TokenBalance {
+  symbol: string;
+  name: string;
+  balance: string;
+  usdValue: string;
+  price: number;
+  change24h: number;
+  contractAddress: string;
+  logoUrl: string;
+}
 
 export function PortfolioPanel({
   isAuthenticated,
   hasWallet,
   walletAddress,
   chainName,
+  executionMode,
   onConnectWallet,
   onSignIn,
+  getAccessToken,
 }: Props) {
-  const [timeSpan, setTimeSpan] = useState<TimeSpan>("1D");
-  const [currency, setCurrency] = useState<Currency>("USD");
+  const [tokens, setTokens] = useState<TokenBalance[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [totalUsd, setTotalUsd] = useState("0.00");
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [lastFetched, setLastFetched] = useState<Date | null>(null);
+  const [persistedTxs, setPersistedTxs] = useState<TxRecord[]>([]);
+  const [chartRange, setChartRange] = useState<string>("7D");
+  const [copied, setCopied] = useState(false);
+  const [currency, setCurrency] = useState<string>("USD");
   const [currencyOpen, setCurrencyOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showHistory, setShowHistory] = useState(false);
-  const [showAddCoin, setShowAddCoin] = useState(false);
-  const [addCoinInput, setAddCoinInput] = useState("");
-  const [addedCoins, setAddedCoins] = useState<string[]>([]);
-  const currencyRef = useRef<HTMLDivElement>(null);
+
+  const currencyRates: Record<string, { symbol: string; rate: number }> = {
+    USD: { symbol: "$", rate: 1 },
+    EUR: { symbol: "€", rate: 0.92 },
+    GBP: { symbol: "£", rate: 0.79 },
+    IDR: { symbol: "Rp", rate: 16450 },
+    JPY: { symbol: "¥", rate: 155.2 },
+  };
+  const cur = currencyRates[currency] ?? currencyRates.USD;
+
+  const fmtCur = (usd: number) => {
+    const val = usd * cur.rate;
+    if (currency === "IDR") return `${cur.symbol}${val >= 1_000_000 ? (val / 1_000_000).toFixed(1) + "M" : val >= 1_000 ? (val / 1_000).toFixed(0) + "K" : val.toFixed(0)}`;
+    if (currency === "JPY") return `${cur.symbol}${val >= 1_000_000 ? (val / 1_000_000).toFixed(1) + "M" : val >= 1_000 ? (val / 1_000).toFixed(0) + "K" : val.toFixed(0)}`;
+    return `${cur.symbol}${val.toFixed(2)}`;
+  };
+
+  const handleCopyAddress = useCallback(() => {
+    if (!walletAddress) return;
+    navigator.clipboard.writeText(walletAddress).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }, [walletAddress]);
+
+  const fetchBalances = useCallback(async () => {
+    if (!walletAddress) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const headers: Record<string, string> = {};
+      if (getAccessToken) {
+        const token = await getAccessToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+      }
+      const res = await fetch(
+        `/api/portfolio?address=${encodeURIComponent(walletAddress)}&chain=${encodeURIComponent(chainName)}`,
+        { headers }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Failed to fetch portfolio (${res.status})`);
+      }
+      const data = await res.json();
+      setTokens(data.tokens ?? []);
+      setTotalUsd(data.totalUsd ?? "0.00");
+      setLastFetched(new Date());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load portfolio");
+      // Keep existing tokens on error
+    } finally {
+      setLoading(false);
+    }
+  }, [walletAddress, chainName, getAccessToken]);
 
   useEffect(() => {
-    if (!currencyOpen) return;
-    function handleClickOutside(e: MouseEvent) {
-      if (currencyRef.current && !currencyRef.current.contains(e.target as Node)) setCurrencyOpen(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [currencyOpen]);
+    if (!isAuthenticated || !hasWallet || !walletAddress) return;
+    const timer = setTimeout(() => {
+      fetchBalances();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [isAuthenticated, hasWallet, walletAddress, fetchBalances]);
 
-  const currencySymbol = currency === "USD" ? "$" : currency === "EUR" ? "€" : "£";
+  // Fetch persisted tx history for cross-session persistence
+  useEffect(() => {
+    if (!walletAddress) return;
+    const timer = setTimeout(() => {
+      fetch(`/api/tx-history?wallet=${walletAddress}`)
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data.txs)) {
+            setPersistedTxs(data.txs as TxRecord[]);
+          }
+        })
+        .catch(() => {});
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [walletAddress]);
 
-  // Not authenticated
+  /* ═══ UNAUTHENTICATED STATE ═══ */
   if (!isAuthenticated) {
     return (
-      <div className="flex-1 flex items-center justify-center px-4">
+      <div className="flex-1 flex items-center justify-center px-6">
         <div className="text-center max-w-md">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-brand flex items-center justify-center mx-auto mb-5 shadow-soft">
-            <Wallet className="w-8 h-8 text-white" />
+          <div
+            className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-5"
+            style={{ background: "oklch(0.62 0.19 260 / 0.1)", border: "1px solid oklch(0.62 0.19 260 / 0.15)" }}
+          >
+            <Wallet className="w-5 h-5" style={{ color: "oklch(0.7 0.19 260)" }} />
           </div>
-          <h2 className="text-xl font-display font-bold text-foreground mb-2">Portfolio</h2>
-          <p className="text-sm text-muted-foreground mb-5">Sign in to view your wallet and assets.</p>
-          <button onClick={onSignIn} className="inline-flex items-center rounded-full bg-gradient-brand text-white px-6 py-2.5 text-sm font-medium hover:shadow-glow transition-all duration-200 hover:scale-[1.02]">
-            Sign in to get started
+          <h2 className="text-xl font-bold mb-2" style={{ color: "var(--app-text-primary)" }}>Portfolio</h2>
+          <p className="text-sm mb-6" style={{ color: "var(--app-text-secondary)" }}>
+            Connect your wallet to view your on-chain assets and token balances.
+          </p>
+          <button type="button" onClick={onSignIn} className="btn-capsule-white text-sm px-6 py-2.5">
+            <Wallet className="w-4 h-4" />
+            Sign in
           </button>
         </div>
       </div>
     );
   }
 
-  const filteredAssets = POPULAR_ASSETS.filter(a =>
-    a.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  /* ═══ NO WALLET ═══ */
+  if (!hasWallet) {
+    return (
+      <div className="flex-1 flex items-center justify-center px-6">
+        <div className="text-center max-w-md">
+          <h2 className="text-xl font-bold mb-2" style={{ color: "var(--app-text-primary)" }}>Wallet Required</h2>
+          <p className="text-sm mb-6" style={{ color: "var(--app-text-secondary)" }}>Connect a wallet to see your portfolio on {chainName}.</p>
+          <button type="button" onClick={onConnectWallet} className="btn-capsule-white text-sm px-6 py-2.5">
+            <Wallet className="w-4 h-4" />
+            Connect Wallet
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const formatChange = (pct: number) => {
+    if (pct === 0) return { text: "0.00%", color: "var(--app-text-tertiary)" };
+    if (pct > 0) return { text: `+${pct.toFixed(2)}%`, color: "var(--app-success)" };
+    return { text: `${pct.toFixed(2)}%`, color: "var(--app-danger)" };
+  };
+
+  const totalNum = parseFloat(totalUsd);
+  const totalConverted = totalNum * cur.rate;
+  const formattedTotal = totalConverted >= 1_000_000
+    ? `${cur.symbol}${(totalConverted / 1_000_000).toFixed(2)}M`
+    : totalConverted >= 1_000
+      ? `${cur.symbol}${(totalConverted / 1_000).toFixed(1)}K`
+      : `${cur.symbol}${totalConverted.toFixed(2)}`;
 
   return (
     <div className="flex-1 overflow-y-auto scroll-contain">
-      <div className="max-w-lg mx-auto px-4 sm:px-6 py-6">
-
-        {/* ═══ HEADER — Total Asset Value ═══ */}
-        <div className="text-center mb-6">
-          <div className="flex items-center justify-center gap-1.5 mb-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-              Total Assets
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-10">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6 sm:mb-8">
+          <div>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-display font-bold" style={{ color: "var(--app-text-primary)" }}>Portfolio</h1>
+            <p className="text-xs sm:text-sm mt-1" style={{ color: "var(--app-text-secondary)" }}>
+              {chainName} · {executionMode}
+              {lastFetched && (
+                <span style={{ color: "var(--app-text-tertiary)" }}> · Updated {lastFetched.toLocaleTimeString()}</span>
+              )}
             </p>
-            {/* Currency selector */}
-            <div className="relative" ref={currencyRef}>
-              <button
-                onClick={() => setCurrencyOpen(v => !v)}
-                className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-muted-foreground/50 uppercase tracking-wider hover:text-muted-foreground transition-colors"
-              >
-                ({currency})
-                <ChevronDown className={`w-2.5 h-2.5 chevron-rotate ${currencyOpen ? "is-open" : ""}`} />
-              </button>
-              <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-1 w-20 bg-white border border-border rounded-lg shadow-soft py-0.5 z-50 dropdown-panel ${currencyOpen ? "is-open" : ""}`}>
-                {(["USD", "EUR", "GBP"] as Currency[]).map(c => (
-                  <button
-                    key={c}
-                    onClick={() => { setCurrency(c); setCurrencyOpen(false); }}
-                    className={`w-full text-center px-2 py-1.5 text-[11px] font-medium transition-colors ${
-                      c === currency ? "text-electric bg-electric/5" : "text-foreground hover:bg-muted/40"
-                    }`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
-          <h1 className="text-4xl font-display font-bold text-foreground tracking-tight">
-            {currencySymbol}—
-          </h1>
-          {hasWallet && walletAddress && (
-            <div className="text-[11px] text-muted-foreground/40 mt-1 flex items-center justify-center gap-1.5">
-              <CopyAddress address={walletAddress} />
-              <span>·</span>
-              <span>{chainName}</span>
-            </div>
-          )}
-          {hasWallet && (
-            <p className="text-[11px] text-muted-foreground/40 mt-0.5">No assets detected on {chainName}</p>
-          )}
-          {!hasWallet && (
-            <p className="text-xs text-muted-foreground/50 mt-1">Connect wallet to view your assets</p>
-          )}
+          <button
+            onClick={fetchBalances}
+            disabled={loading}
+            className="p-2.5 sm:p-3 rounded-xl transition-all duration-200"
+            style={{ border: "1px solid var(--app-card-border)", background: "var(--app-card-glass)" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "var(--app-hover)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "var(--app-card-glass)"; }}
+            title="Refresh balances"
+          >
+            <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 ${loading ? "animate-spin" : ""}`} style={{ color: "var(--app-text-secondary)" }} />
+          </button>
         </div>
 
-        {/* ═══ ASSET CHANGE GRAPH ═══ */}
-        <div className="rounded-2xl border border-border/50 bg-gradient-to-b from-white to-muted/10 p-5 mb-5">
-          {/* Time span selector */}
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-medium text-muted-foreground">Asset Change</span>
-            <div className="flex gap-1 bg-muted/30 rounded-lg p-0.5">
-              {(["1D", "1W", "1M"] as TimeSpan[]).map(ts => (
+        {/* Total Value Card */}
+        <div
+          className="rounded-2xl p-5 sm:p-6 lg:p-8 mb-6 sm:mb-8 relative overflow-hidden"
+          style={{
+            background: "linear-gradient(135deg, oklch(0.62 0.19 260 / 0.12), oklch(0.7 0.13 280 / 0.06))",
+            border: "1px solid oklch(0.62 0.19 260 / 0.15)",
+          }}
+        >
+          {/* Decorative glow */}
+          <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-20" style={{ background: "oklch(0.62 0.19 260)" }} />
+          
+          <p className="text-[10px] sm:text-[11px] lg:text-xs font-semibold uppercase tracking-[0.15em] mb-2" style={{ color: "oklch(0.7 0.19 260)" }}>
+            Total Value
+          </p>
+          <p className="text-3xl sm:text-4xl lg:text-5xl font-display font-extrabold tracking-tight relative z-10" style={{ color: "var(--app-text-primary)" }}>
+            {loading && tokens.length === 0 ? (
+              <span className="inline-flex items-center gap-3">
+                <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 animate-spin" style={{ color: "oklch(0.7 0.19 260)" }} />
+                <span className="text-lg sm:text-xl" style={{ color: "var(--app-text-tertiary)" }}>Loading…</span>
+              </span>
+            ) : formattedTotal}
+          </p>
+          <button
+            type="button"
+            onClick={handleCopyAddress}
+            className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-mono relative z-10 transition-all duration-200 hover:scale-[1.02] cursor-pointer group"
+            style={{ background: "var(--app-subtle-bg)", border: "1px solid var(--app-subtle-border)", color: "var(--app-text-tertiary)" }}
+            title="Click to copy address"
+          >
+            {walletAddress?.slice(0, 6)}…{walletAddress?.slice(-4)}
+            {copied ? (
+              <Check className="w-3 h-3" style={{ color: "var(--app-success)" }} />
+            ) : (
+              <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+            )}
+          </button>
+        </div>
+
+        {/* Portfolio Chart Section */}
+        <div
+          className="rounded-2xl mb-6 sm:mb-8 overflow-hidden"
+          style={{ background: "var(--app-card-glass)", border: "1px solid var(--app-card-border)" }}
+        >
+          <div className="px-4 sm:px-5 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--app-card-border)" }}>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" style={{ color: "oklch(0.7 0.19 260)" }} />
+              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.12em]" style={{ color: "var(--app-text-secondary)" }}>Performance</span>
+            </div>
+            <div className="flex gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0.5 0.02 260 / 0.08)" }}>
+              {["1D", "7D", "1M", "3M", "1Y"].map(r => (
                 <button
-                  key={ts}
-                  onClick={() => setTimeSpan(ts)}
-                  className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${
-                    ts === timeSpan
-                      ? "bg-white text-foreground shadow-sm"
-                      : "text-muted-foreground/60 hover:text-muted-foreground"
-                  }`}
+                  key={r}
+                  onClick={() => setChartRange(r)}
+                  className="px-2.5 py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all duration-150"
+                  style={{
+                    background: chartRange === r ? "oklch(0.62 0.19 260 / 0.15)" : "transparent",
+                    color: chartRange === r ? "oklch(0.75 0.19 260)" : "var(--app-text-tertiary)",
+                    border: chartRange === r ? "1px solid oklch(0.62 0.19 260 / 0.2)" : "1px solid transparent",
+                  }}
                 >
-                  {ts}
+                  {r}
                 </button>
               ))}
             </div>
           </div>
-
-          {/* Chart placeholder */}
-          {hasWallet ? (
-            <div className="h-28 flex items-center justify-center">
-              <svg className="w-full h-full" viewBox="0 0 400 100" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="oklch(0.62 0.19 260)" stopOpacity="0.15" />
-                    <stop offset="100%" stopColor="oklch(0.62 0.19 260)" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <path d="M0,70 L400,70" stroke="oklch(0.62 0.19 260)" strokeWidth="1.5" strokeDasharray="4 4" fill="none" opacity="0.3" />
-                <text x="200" y="65" textAnchor="middle" fill="oklch(0.55 0 0 / 0.3)" fontSize="11" fontFamily="system-ui">
-                  No historical data yet
-                </text>
-              </svg>
-            </div>
-          ) : (
-            <div className="h-28 flex items-center justify-center">
-              <p className="text-xs text-muted-foreground/40">Connect wallet to view asset history</p>
-            </div>
-          )}
-        </div>
-
-        {/* ═══ QUICK ACTIONS ═══ */}
-        <div className="flex justify-center gap-8 mb-7">
-          <button
-            onClick={() => { setShowHistory(true); setShowAddCoin(false); }}
-            className="flex flex-col items-center gap-1.5 group"
-          >
-            <div className="w-12 h-12 rounded-full bg-gradient-brand flex items-center justify-center shadow-soft group-hover:shadow-glow transition-shadow">
-              <Clock className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-[11px] font-medium text-muted-foreground group-hover:text-foreground transition-colors">History</span>
-          </button>
-          <button
-            onClick={() => { setShowAddCoin(true); setShowHistory(false); }}
-            className="flex flex-col items-center gap-1.5 group"
-          >
-            <div className="w-12 h-12 rounded-full bg-gradient-brand flex items-center justify-center shadow-soft group-hover:shadow-glow transition-shadow">
-              <Plus className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-[11px] font-medium text-muted-foreground group-hover:text-foreground transition-colors">Add Coin</span>
-          </button>
-        </div>
-
-        {/* ═══ HISTORY PANEL ═══ */}
-        <div
-          className="overflow-hidden mb-5"
-          style={{
-            maxHeight: showHistory ? "400px" : "0px",
-            opacity: showHistory ? 1 : 0,
-            transition: "max-height 0.25s ease-out, opacity 0.2s ease-out",
-          }}
-        >
-          <div className="rounded-2xl border border-border/50 bg-white p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Clock className="w-4 h-4 text-electric" />
-                Transaction History
-              </h3>
-              <button onClick={() => setShowHistory(false)} className="p-1 rounded-lg hover:bg-muted/40 transition-colors">
-                <X className="w-3.5 h-3.5 text-muted-foreground" />
-              </button>
-            </div>
-            <div className="text-center py-6">
-              <Clock className="w-8 h-8 text-muted-foreground/15 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground/60">No trade activity yet.</p>
-              <p className="text-[11px] text-muted-foreground/30 mt-0.5">Executed trades will appear here.</p>
-            </div>
+          <div className="px-4 sm:px-5 py-6 sm:py-8 flex flex-col items-center justify-center" style={{ minHeight: 140 }}>
+            {/* SVG Sparkline placeholder */}
+            <svg viewBox="0 0 400 80" className="w-full max-w-md" style={{ opacity: 0.3 }}>
+              <defs>
+                <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="oklch(0.62 0.19 260)" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="oklch(0.62 0.19 260)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <path d="M0,60 Q50,55 100,45 T200,35 T300,25 T400,20" fill="none" stroke="oklch(0.62 0.19 260)" strokeWidth="2" strokeLinecap="round" />
+              <path d="M0,60 Q50,55 100,45 T200,35 T300,25 T400,20 V80 H0 Z" fill="url(#chartGrad)" />
+            </svg>
+            <p className="text-[11px] mt-3 font-medium" style={{ color: "var(--app-text-tertiary)" }}>Historical chart — Coming Soon</p>
           </div>
         </div>
 
-        {/* ═══ ADD COIN PANEL ═══ */}
-        <div
-          className="overflow-hidden mb-5"
-          style={{
-            maxHeight: showAddCoin ? "400px" : "0px",
-            opacity: showAddCoin ? 1 : 0,
-            transition: "max-height 0.25s ease-out, opacity 0.2s ease-out",
-          }}
-        >
-          <div className="rounded-2xl border border-border/50 bg-white p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Plus className="w-4 h-4 text-electric" />
-                Add Coin
-              </h3>
-              <button onClick={() => setShowAddCoin(false)} className="p-1 rounded-lg hover:bg-muted/40 transition-colors">
-                <X className="w-3.5 h-3.5 text-muted-foreground" />
-              </button>
-            </div>
-            <p className="text-[11px] text-muted-foreground/60 mb-3">
-              Add a token by coin ID or contract address. This is saved locally only.
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={addCoinInput}
-                onChange={e => setAddCoinInput(e.target.value)}
-                placeholder="Token symbol or 0x… address"
-                className="flex-1 bg-muted/20 border border-border/50 rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/30 outline-none focus:border-electric/40 focus:bg-white transition-colors"
-              />
+        {/* Error message */}
+        {error && (
+          <div
+            className="rounded-xl px-4 py-3 mb-4 flex items-center gap-3 text-sm"
+            style={{ background: "oklch(0.65 0.2 25 / 0.08)", border: "1px solid oklch(0.65 0.2 25 / 0.15)", color: "var(--app-danger)" }}
+          >
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span className="flex-1">{error}</span>
+            <button onClick={fetchBalances} className="text-xs font-semibold underline">Retry</button>
+          </div>
+        )}
+
+        {/* Token List Header */}
+        {tokens.length > 0 && (
+          <div className="flex items-center justify-between px-4 mb-2">
+            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.15em]" style={{ color: "var(--app-text-tertiary)" }}>
+              Assets ({tokens.length})
+            </span>
+            <div className="relative">
               <button
-                onClick={() => {
-                  if (addCoinInput.trim()) {
-                    setAddedCoins(prev => [...prev, addCoinInput.trim()]);
-                    setAddCoinInput("");
-                  }
-                }}
-                disabled={!addCoinInput.trim()}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                  addCoinInput.trim()
-                    ? "bg-gradient-brand text-white hover:shadow-glow"
-                    : "bg-muted/40 text-muted-foreground/30 cursor-not-allowed"
-                }`}
+                type="button"
+                onClick={() => setCurrencyOpen(!currencyOpen)}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.1em] transition-all duration-150"
+                style={{ color: "oklch(0.7 0.19 260)", background: "oklch(0.62 0.19 260 / 0.08)", border: "1px solid oklch(0.62 0.19 260 / 0.12)" }}
               >
-                Add
+                {currency}
+                <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${currencyOpen ? "rotate-180" : ""}`} />
               </button>
-            </div>
-            {addedCoins.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {addedCoins.map((coin, i) => (
-                  <span key={i} className="inline-flex items-center gap-1 bg-muted/30 border border-border/40 rounded-lg px-2.5 py-1 text-[11px] font-medium text-foreground">
-                    {coin.length > 10 ? `${coin.slice(0, 6)}…${coin.slice(-4)}` : coin}
-                    <button onClick={() => setAddedCoins(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground/40 hover:text-red-500 transition-colors">
-                      <X className="w-3 h-3" />
+              {currencyOpen && (
+                <div
+                  className="absolute right-0 top-full mt-1 rounded-lg py-1 z-50 min-w-[80px] shadow-lg"
+                  style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+                >
+                  {Object.keys(currencyRates).map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => { setCurrency(c); setCurrencyOpen(false); }}
+                      className="w-full text-left px-3 py-1.5 text-[11px] font-bold transition-colors"
+                      style={{
+                        color: c === currency ? "oklch(0.7 0.19 260)" : "var(--app-text-secondary)",
+                        background: c === currency ? "oklch(0.62 0.19 260 / 0.08)" : "transparent",
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = "var(--app-hover)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = c === currency ? "oklch(0.62 0.19 260 / 0.08)" : "transparent"; }}
+                    >
+                      {currencyRates[c].symbol} {c}
                     </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ═══ CRYPTO ASSETS ═══ */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Coins className="w-4 h-4 text-electric" />
-                Popular Tokens
-              </h2>
-              <p className="text-[10px] text-muted-foreground/40 ml-6">on {chainName} · not wallet holdings</p>
-            </div>
-          </div>
-
-          {/* Search */}
-          <div className="relative mb-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/30" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search tokens…"
-              className="w-full bg-muted/15 border border-border/40 rounded-xl pl-9 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/30 outline-none focus:border-electric/40 focus:bg-white transition-colors"
-            />
-          </div>
-
-          {/* Asset list */}
-          {!hasWallet ? (
-            <div className="rounded-2xl border border-border/50 bg-white p-6 text-center">
-              <Wallet className="w-8 h-8 text-muted-foreground/15 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground/60 mb-3">Connect wallet to view your assets.</p>
-              <button onClick={onConnectWallet} className="inline-flex items-center gap-2 rounded-full border border-electric/30 text-electric px-4 py-1.5 text-sm font-medium hover:bg-electric/5 transition-colors">
-                <Wallet className="w-3.5 h-3.5" />
-                Connect Wallet
-              </button>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-border/50 bg-white overflow-hidden">
-              {filteredAssets.length > 0 ? (
-                <div className="divide-y divide-border/30">
-                  {filteredAssets.map(asset => (
-                    <div key={asset.symbol} className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/20 transition-colors">
-                      {/* Token icon */}
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
-                        style={{ backgroundColor: asset.color }}
-                      >
-                        {asset.symbol.slice(0, 2)}
-                      </div>
-                      {/* Token info */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-foreground">{asset.symbol}</p>
-                        <p className="text-[11px] text-muted-foreground/50 truncate">{asset.name}</p>
-                      </div>
-                      {/* Balance */}
-                      <div className="text-right">
-                        <p className="text-sm font-medium text-foreground/20">—</p>
-                      </div>
-                    </div>
                   ))}
-                  {/* Added coins */}
-                  {addedCoins.map((coin, i) => (
-                    <div key={`added-${i}`} className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/20 transition-colors">
-                      <div className="w-9 h-9 rounded-full bg-muted/40 flex items-center justify-center text-muted-foreground text-[11px] font-bold shrink-0">
-                        ?
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-foreground">{coin.length > 10 ? `${coin.slice(0, 6)}…${coin.slice(-4)}` : coin}</p>
-                        <p className="text-[11px] text-muted-foreground/50">Custom token</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium text-foreground/20">—</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Search className="w-6 h-6 text-muted-foreground/15 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground/40">No tokens match &ldquo;{searchQuery}&rdquo;</p>
                 </div>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Add coin helper */}
-          <button
-            onClick={() => { setShowAddCoin(true); }}
-            className="mt-3 w-full flex items-center justify-center gap-1.5 text-[12px] font-medium text-electric/70 hover:text-electric transition-colors py-2"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add coin ID you don&apos;t see here
-          </button>
+        {/* Token List */}
+        <div className="space-y-1.5 stagger-children">
+          {tokens.map((token) => {
+            const change = formatChange(token.change24h);
+            const isExpanded = expanded === token.symbol;
+
+            return (
+              <div key={`${token.symbol}-${token.contractAddress}`}>
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isExpanded ? null : token.symbol)}
+                  className="w-full flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3.5 sm:py-4 rounded-xl transition-all duration-200 text-left app-card app-card-hover"
+                >
+                  {/* Token icon */}
+                  <div className="shrink-0">
+                    <TokenIcon symbol={token.symbol} size={40} />
+                  </div>
+
+                  {/* Token info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm sm:text-base font-bold" style={{ color: "var(--app-text-primary)" }}>{token.symbol}</span>
+                      <span className="text-[10px] sm:text-xs hidden sm:inline" style={{ color: "var(--app-text-tertiary)" }}>{token.name}</span>
+                    </div>
+                    <span className="text-xs sm:text-sm block mt-0.5 font-mono" style={{ color: "var(--app-text-secondary)" }}>
+                      {token.balance}
+                    </span>
+                  </div>
+
+                  {/* Value & change */}
+                  <div className="text-right shrink-0">
+                    <p className="text-sm sm:text-base font-bold" style={{ color: "var(--app-text-primary)" }}>{fmtCur(parseFloat(token.usdValue))}</p>
+                    <p className="text-[10px] sm:text-xs font-semibold" style={{ color: change.color }}>{change.text}</p>
+                  </div>
+
+                  <ChevronRight
+                    className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
+                    style={{ color: "var(--app-text-tertiary)" }}
+                  />
+                </button>
+
+                {/* Expanded detail */}
+                {isExpanded && (
+                  <div
+                    className="ml-14 sm:ml-16 mr-4 mb-2 px-4 sm:px-5 py-3 sm:py-4 rounded-xl view-enter"
+                    style={{ background: "var(--app-card-glass)", border: "1px solid var(--app-card-border)" }}
+                  >
+                    <div className="space-y-2.5 text-xs sm:text-sm">
+                      <div className="flex items-center justify-between">
+                        <span style={{ color: "var(--app-text-secondary)" }}>Chain</span>
+                        <span className="font-medium" style={{ color: "var(--app-text-primary)" }}>{chainName}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span style={{ color: "var(--app-text-secondary)" }}>Holdings</span>
+                        <span className="font-mono font-medium" style={{ color: "var(--app-text-primary)" }}>{token.balance} {token.symbol}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span style={{ color: "var(--app-text-secondary)" }}>Unit Price</span>
+                        <span className="font-medium" style={{ color: "var(--app-text-primary)" }}>${token.price.toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span style={{ color: "var(--app-text-secondary)" }}>{currency} Value</span>
+                        <span className="font-bold" style={{ color: "var(--app-text-primary)" }}>{fmtCur(parseFloat(token.usdValue))}</span>
+                      </div>
+                      {token.contractAddress && token.contractAddress !== "native" && (
+                        <div className="flex items-center justify-between">
+                          <span style={{ color: "var(--app-text-secondary)" }}>Contract</span>
+                          <span className="font-mono text-[11px]" style={{ color: "var(--app-text-tertiary)" }}>
+                            {token.contractAddress.slice(0, 6)}…{token.contractAddress.slice(-4)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--app-card-border)" }}>
+                      <a
+                        href={`https://www.okx.com/web3/explorer/xlayer/address/${walletAddress}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium transition-opacity hover:opacity-80"
+                        style={{ color: "oklch(0.7 0.19 260)" }}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        View on Explorer
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Loading skeleton */}
+        {loading && tokens.length === 0 && (
+          <div className="space-y-2">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-16 sm:h-20 rounded-xl animate-pulse" style={{ background: "var(--app-card-glass)" }} />
+            ))}
+          </div>
+        )}
+
+        {tokens.length === 0 && !loading && !error && (
+          <div className="text-center py-12 sm:py-16">
+            <div className="w-14 h-14 rounded-2xl mx-auto mb-5 flex items-center justify-center" style={{ background: "oklch(0.62 0.19 260 / 0.08)", border: "1px solid oklch(0.62 0.19 260 / 0.12)" }}>
+              <Wallet className="w-6 h-6" style={{ color: "oklch(0.7 0.19 260)" }} />
+            </div>
+            <p className="text-base font-bold mb-1" style={{ color: "var(--app-text-primary)" }}>No tokens found</p>
+            <p className="text-sm mb-6" style={{ color: "var(--app-text-tertiary)" }}>Deposit tokens to {chainName} to see your portfolio</p>
+            <a
+              href="https://www.okx.com/web3/bridge"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 hover:scale-[1.02]"
+              style={{
+                background: "linear-gradient(135deg, oklch(0.62 0.19 260), oklch(0.7 0.13 280))",
+                color: "#fff",
+                boxShadow: "0 4px 20px oklch(0.62 0.19 260 / 0.3)",
+              }}
+            >
+              <Plus className="w-4 h-4" />
+              Bridge tokens to X Layer
+              <ArrowUpRight className="w-3.5 h-3.5" />
+            </a>
+          </div>
+        )}
+
+        {/* ═══ Transaction History ═══ */}
+        <div className="mt-8 sm:mt-10">
+          <div className="flex items-center justify-between px-4 mb-3">
+            <div className="flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5" style={{ color: "var(--app-text-tertiary)" }} />
+              <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.15em]" style={{ color: "var(--app-text-tertiary)" }}>
+                PhylaX Trades {persistedTxs.length > 0 ? `(${persistedTxs.length})` : ""}
+              </span>
+            </div>
+          </div>
+          {persistedTxs.length > 0 ? (
+            <div className="space-y-1.5">
+              {persistedTxs.slice(0, 10).map((tx) => (
+                <div
+                  key={tx.txHash ?? tx.id}
+                  className="flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-3.5 rounded-xl app-card"
+                >
+                  <div
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: "oklch(0.62 0.19 260 / 0.1)", border: "1px solid oklch(0.62 0.19 260 / 0.12)" }}
+                  >
+                    <ArrowRightLeft className="w-4 h-4" style={{ color: "oklch(0.7 0.19 260)" }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs sm:text-sm font-bold" style={{ color: "var(--app-text-primary)" }}>
+                      {tx.fromSymbol} → {tx.toSymbol}
+                    </span>
+                    <span className="text-[10px] sm:text-xs block mt-0.5" style={{ color: "var(--app-text-tertiary)" }}>
+                      {tx.confirmedAt ? new Date(tx.confirmedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs sm:text-sm font-bold" style={{ color: "var(--app-text-primary)" }}>
+                      ${(tx.amountUsd ?? 0).toFixed(2)}
+                    </p>
+                  </div>
+                  {(tx.explorerUrl || tx.txHash) && (
+                    <a
+                      href={tx.explorerUrl || `https://www.okx.com/web3/explorer/xlayer/tx/${tx.txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 p-1 rounded-lg transition-opacity hover:opacity-70"
+                      title="View on explorer"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" style={{ color: "oklch(0.7 0.19 260)" }} />
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div
+              className="rounded-xl px-5 py-8 text-center"
+              style={{ background: "var(--app-card-glass)", border: "1px solid var(--app-card-border)" }}
+            >
+              <ArrowRightLeft className="w-5 h-5 mx-auto mb-2" style={{ color: "var(--app-text-tertiary)" }} />
+              <p className="text-sm font-medium" style={{ color: "var(--app-text-secondary)" }}>No trades yet</p>
+              <p className="text-xs mt-1" style={{ color: "var(--app-text-tertiary)" }}>Swaps executed via PhylaX Agent will appear here</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

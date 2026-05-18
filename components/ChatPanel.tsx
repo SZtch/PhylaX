@@ -8,13 +8,14 @@ import {
   Eye,
   BarChart3,
   Search,
+  Wallet,
+  Paperclip,
 } from "lucide-react";
 import { ChatMessage, type ChatMessageData } from "./ChatMessage";
 import { TradePlanCard } from "./TradePlanCard";
 import { RiskResultCard } from "./RiskResultCard";
 import { QuoteCard } from "./QuoteCard";
 import type { ChatState } from "../lib/chat-states";
-import { CHAT_STATE_LABELS, isBusyState } from "../lib/chat-states";
 import type { TokenSignal, SimulationResult } from "../lib/schemas";
 import { type ChainConfig } from "../lib/chains";
 
@@ -29,10 +30,27 @@ interface ChatMessageWithCards extends ChatMessageData { pipelineData?: Pipeline
 // ─── Prompt suggestions ───────────────────────────────────────────────────────
 
 const SUGGESTIONS = [
-  { icon: Eye, label: "Trade Preview", desc: "Quote 100 USDC to OKB", prompt: "Quote 100 USDC to OKB" },
-  { icon: Scan, label: "Scan Token", desc: "Check token risk before trading", prompt: "Scan this token before I trade" },
-  { icon: Search, label: "Find Low-Risk", desc: "Discover safer tokens on X Layer", prompt: "Find a low-risk token on X Layer" },
-  { icon: BarChart3, label: "Route Risk", desc: "Understand swap route risks", prompt: "Explain route risk before swapping" },
+  {
+    icon: Eye, label: "Swap Preview", chipColor: "chip-emerald",
+    agentQuestion: "What do you wanna swap? Give me the token and amount, like \"swap $5 USDC to OKB\".",
+  },
+  {
+    icon: Scan, label: "Safety Scan", chipColor: "chip-indigo",
+    agentQuestion: "Which token do you wanna check? Drop the name or paste the address.",
+  },
+  {
+    icon: Search, label: "Trending Now", chipColor: "chip-cyan",
+    agentQuestion: "Pulling what's hot right now, one sec\u2026",
+    autoRun: "What tokens are trending on X Layer right now?",
+  },
+  {
+    icon: BarChart3, label: "Market Read", chipColor: "chip-amber",
+    agentQuestion: "Which token do you want me to look into? BTC, ETH, or something else?",
+  },
+  {
+    icon: Shield, label: "Risk Check", chipColor: "chip-violet",
+    agentQuestion: "What token are you eyeing? Give me the name or address and I'll scan it.",
+  },
 ];
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -44,6 +62,7 @@ interface ChatPanelProps {
   onConnectWallet: () => void;
   onSignIn: () => void;
   onRenameSession?: (label: string) => void;
+  onCreateSession?: () => Promise<string | undefined>;
   walletAddress?: string | null;
   getAccessToken?: () => Promise<string | null>;
   getIdentityToken?: () => Promise<string | null>;
@@ -111,6 +130,7 @@ export function ChatPanel({
   onConnectWallet,
   onSignIn,
   onRenameSession,
+  onCreateSession,
   walletAddress,
   getAccessToken,
   getIdentityToken,
@@ -148,7 +168,7 @@ export function ChatPanel({
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
-        
+
         if (!ignore && data.messages) {
           setMessages(data.messages.map((m: { id: string; role: string; content: string; createdAt: string; metadata: Record<string, unknown> | null }) => ({
             id: m.id,
@@ -157,7 +177,7 @@ export function ChatPanel({
             timestamp: new Date(m.createdAt).getTime(),
             pipelineData: (m.metadata as unknown as PipelineData) || null,
           })));
-          
+
           if (data.messages.length > 0) {
             hasRenamed.current = true;
             setChatState("WALLET_CONNECTED");
@@ -184,8 +204,7 @@ export function ChatPanel({
           return [...prev, {
             id: `system-welcome-${Date.now()}`,
             role: "assistant",
-            content: `PhylaX is ready on ${selectedChain.name}.
-I can scan tokens, search for signals, and prepare quotes. Every trade requires your wallet signature.`,
+            content: `Hey, you're live on ${selectedChain.name}. What do you wanna do?`,
             timestamp: Date.now(),
           }];
         });
@@ -207,6 +226,31 @@ I can scan tokens, search for signals, and prepare quotes. Every trade requires 
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || !canChat || isLoading) return;
+
+    let targetConversationId = conversationId;
+    if (!targetConversationId || targetConversationId.startsWith("session-")) {
+      if (onCreateSession) {
+        setIsLoading(true);
+        try {
+          const newId = await onCreateSession();
+          if (newId) targetConversationId = newId;
+        } catch (err) {
+          console.error("Failed to implicitly create session:", err);
+        }
+      }
+
+      if (!targetConversationId || targetConversationId.startsWith("session-")) {
+        setMessages(prev => [...prev, {
+          id: `system-error-${Date.now()}`,
+          role: "system",
+          content: "Session is still initializing. Please wait a moment and try again.",
+          timestamp: Date.now(),
+        }]);
+        setIsLoading(false);
+        return;
+      }
+    }
+
     const trimmedText = text.trim();
     // Auto-rename session on first user message
     if (!hasRenamed.current && onRenameSession) {
@@ -223,9 +267,9 @@ I can scan tokens, search for signals, and prepare quotes. Every trade requires 
       if (getIdentityToken) { try { identityToken = await getIdentityToken(); } catch { /* */ } }
       const headers: Record<string, string> = { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}`, "x-wallet-address": walletAddress ?? "" };
       if (identityToken) headers["x-privy-identity-token"] = identityToken;
-      
-      const res = await fetch("/api/chat/stream", { method: "POST", headers, body: JSON.stringify({ conversationId, message: text.trim(), chain: selectedChain.id }) });
-      
+
+      const res = await fetch("/api/chat/stream", { method: "POST", headers, body: JSON.stringify({ conversationId: targetConversationId, message: text.trim(), chain: selectedChain.id }) });
+
       if (!res.ok) {
         let errorContent = "Something went wrong. Please try again.";
         try {
@@ -249,27 +293,27 @@ I can scan tokens, search for signals, and prepare quotes. Every trade requires 
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
-          
+
           let newlineIndex;
           while ((newlineIndex = buffer.indexOf("\n\n")) >= 0) {
             const chunk = buffer.slice(0, newlineIndex);
             buffer = buffer.slice(newlineIndex + 2);
-            
+
             if (chunk.startsWith("event: ")) {
               const eventTypeLine = chunk.split("\n")[0];
               const dataLine = chunk.split("\n").find(l => l.startsWith("data: "));
               if (!dataLine) continue;
-              
+
               const type = eventTypeLine.replace("event: ", "").trim();
               const data = JSON.parse(dataLine.replace("data: ", ""));
-              
+
               if (type === "step" || type === "tool_start" || type === "tool_result" || type === "partial_failure") {
                 setMessages(prev => prev.map(m => {
                   if (m.id === loadingMsg.id) {
                     const currentSteps = m.steps ? [...m.steps] : [];
                     const stepId = data.id || `step-${Date.now()}`;
                     const existingIdx = currentSteps.findIndex(s => s.id === stepId);
-                    
+
                     if (existingIdx >= 0) {
                       currentSteps[existingIdx] = { ...currentSteps[existingIdx], status: data.status, label: data.label || currentSteps[existingIdx].label };
                     } else {
@@ -300,9 +344,23 @@ I can scan tokens, search for signals, and prepare quotes. Every trade requires 
     } finally { setIsLoading(false); }
   }, [canChat, isLoading, walletAddress, getAccessToken, getIdentityToken, onRenameSession, selectedChain.id, conversationId]);
 
-  const handleSuggestionClick = (prompt: string) => {
+  const handleSuggestionClick = (suggestion: typeof SUGGESTIONS[number]) => {
     if (!canChat) { onSignIn(); return; }
-    sendMessage(prompt);
+
+    // If this suggestion has autoRun (like Trending), send it as a real message
+    if (suggestion.autoRun) {
+      sendMessage(suggestion.autoRun);
+      return;
+    }
+
+    // Otherwise, inject the agent's contextual question — no API call
+    const now = Date.now();
+    setMessages(prev => [
+      ...prev,
+      { id: `agent-q-${now}`, role: "assistant" as const, content: suggestion.agentQuestion, timestamp: now },
+    ]);
+    // Focus the input so the user can respond immediately
+    setTimeout(() => inputRef.current?.focus(), 100);
   };
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); sendMessage(input); };
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -326,7 +384,7 @@ I can scan tokens, search for signals, and prepare quotes. Every trade requires 
         /* ═══ CONVERSATION MODE ═══ */
         <>
           <div className="flex-1 overflow-y-auto scroll-contain min-h-0">
-            <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+            <div className="max-w-3xl lg:max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-5">
               {messages.map(msg => (
                 <div key={msg.id} className="space-y-3">
                   <ChatMessage message={msg} />
@@ -341,88 +399,154 @@ I can scan tokens, search for signals, and prepare quotes. Every trade requires 
             </div>
           </div>
 
-          {/* Pinned input */}
-          <div className="shrink-0 border-t border-border/40 bg-white px-4 sm:px-6 py-3">
-            <div className="max-w-3xl mx-auto">
+          {/* Pinned capsule input */}
+          <div className="shrink-0 px-4 sm:px-6 py-4">
+            <div className="max-w-3xl lg:max-w-4xl mx-auto">
               <form onSubmit={handleSubmit}>
-                <div className="flex items-end gap-2 rounded-2xl border border-border bg-muted/20 px-4 py-3 focus-within:border-electric/40 focus-within:bg-white focus-within:shadow-soft transition-all duration-200">
-                  <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={isLoading} placeholder="Ask PhylaX anything…" rows={1} className="flex-1 bg-transparent text-[15px] text-foreground placeholder:text-muted-foreground/40 resize-none outline-none min-h-[28px] max-h-[150px]" />
-                  <button type="submit" disabled={!input.trim() || isLoading} aria-label="Send" className={`p-2 rounded-xl transition-all duration-150 flex-shrink-0 ${input.trim() && !isLoading ? "bg-gradient-brand text-white hover:shadow-glow" : "bg-muted/60 text-muted-foreground/30 cursor-not-allowed"}`}>
+                <div className="chat-input-capsule flex items-center gap-2 sm:gap-3">
+                  <button type="button" className="shrink-0 p-1.5 rounded-full transition-colors" style={{ color: "var(--app-text-tertiary)" }}>
+                    <Paperclip className="w-4 h-4" />
+                  </button>
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={isLoading}
+                    placeholder="Ask PhylaX anything…"
+                    rows={1}
+                    className="flex-1 bg-transparent text-sm sm:text-[15px] placeholder:opacity-25 resize-none outline-none min-h-[24px] max-h-[100px]"
+                    style={{ color: "var(--app-text-primary)" }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!input.trim() || isLoading}
+                    aria-label="Send"
+                    className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200"
+                    style={{
+                      background: input.trim() && !isLoading
+                        ? "linear-gradient(135deg, oklch(0.62 0.19 260), oklch(0.7 0.13 280))"
+                        : "var(--app-disabled-btn)",
+                      color: input.trim() && !isLoading ? "white" : "var(--app-text-tertiary)",
+                      cursor: input.trim() && !isLoading ? "pointer" : "not-allowed",
+                    }}
+                  >
                     <Send className="w-4 h-4" />
                   </button>
                 </div>
               </form>
-              {isBusyState(chatState) && (
-                <p className="text-[11px] text-electric font-medium text-center mt-2 animate-pulse">{CHAT_STATE_LABELS[chatState]}</p>
-              )}
-              <p className="text-[10px] text-muted-foreground/30 text-center mt-2">Non-custodial · User-signed execution · {selectedChain.name}</p>
+
+              <p className="text-[10px] text-center mt-2" style={{ color: "var(--app-text-tertiary)", opacity: 0.5 }}>
+                Non-custodial · User-signed execution · {selectedChain.name}
+              </p>
             </div>
           </div>
         </>
       ) : (
-        /* ═══ EMPTY STATE — ChatGPT-style centered ═══ */
-        <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6">
+        /* ═══ EMPTY STATE — Xona-style Welcome ═══ */
+        <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8">
           <div className="w-full max-w-2xl mx-auto">
-            {/* Logo + greeting */}
+
+            {/* Clean centered hero */}
             <EmptyStateWrapper>
-              <div className="text-center mb-8">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-brand flex items-center justify-center mx-auto mb-5 shadow-soft">
-                  <Shield className="w-7 h-7 text-white" />
+              <div className="text-center mb-10">
+                {/* Subtle brand mark */}
+                <div className="inline-flex items-center justify-center mb-6">
+                  <div
+                    className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                    style={{
+                      background: "oklch(0.62 0.19 260 / 0.1)",
+                      border: "1px solid oklch(0.62 0.19 260 / 0.15)",
+                    }}
+                  >
+                    <img
+                      src="/assets/PhylaX-mark.png"
+                      alt="PhylaX"
+                      width={28}
+                      height={28}
+                      className="object-contain"
+                    />
+                  </div>
                 </div>
-                <h2 className="text-xl font-display font-bold text-foreground mb-2">
-                  Trade secure on X Layer
+
+                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight mb-3" style={{ color: "var(--app-text-primary)" }}>
+                  Discover and Trade with PhylaX
                 </h2>
-                <p className="text-[13px] text-muted-foreground">
-                  Scan tokens and build quotes with risk-first protection.
+                <p className="text-sm sm:text-base max-w-md mx-auto leading-relaxed" style={{ color: "var(--app-text-secondary)" }}>
+                  Your DeFi guard. Every trade scanned, every quote guarded.
                 </p>
               </div>
             </EmptyStateWrapper>
 
-            {/* Suggestion cards — ChatGPT-style 2x2 grid */}
+            {/* Capsule input */}
             <EmptyStateWrapper>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
+              {!canChat ? (
+                <div className="flex justify-center mb-8">
+                  <button
+                    type="button"
+                    onClick={onConnectWallet}
+                    className="btn-capsule-white text-[14px] px-8 py-3"
+                  >
+                    <Wallet className="w-4 h-4" />
+                    Sign in to start trading
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="mb-8">
+                  <div className="chat-input-capsule flex items-center gap-3">
+                    <button type="button" className="shrink-0 p-1.5 rounded-full transition-colors" style={{ color: "var(--app-text-tertiary)" }}>
+                      <Paperclip className="w-4 h-4" />
+                    </button>
+                    <textarea
+                      ref={inputRef}
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      disabled={isLoading}
+                      placeholder="Ask PhylaX anything…"
+                      rows={1}
+                      className="flex-1 bg-transparent text-[15px] placeholder:opacity-25 resize-none outline-none disabled:cursor-not-allowed min-h-[24px] max-h-[100px]"
+                      style={{ color: "var(--app-text-primary)" }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={!input.trim() || isLoading}
+                      aria-label="Send"
+                      className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200"
+                      style={{
+                        background: input.trim() && !isLoading
+                          ? "linear-gradient(135deg, oklch(0.62 0.19 260), oklch(0.7 0.13 280))"
+                          : "var(--app-disabled-btn)",
+                        color: input.trim() && !isLoading ? "white" : "var(--app-text-tertiary)",
+                      }}
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </form>
+              )}
+            </EmptyStateWrapper>
+
+            {/* Colored suggestion chips */}
+            <EmptyStateWrapper>
+              <div className="flex flex-wrap items-center justify-center gap-2.5 mb-6">
                 {SUGGESTIONS.map(s => (
                   <button
-                    key={s.prompt}
-                    onClick={() => handleSuggestionClick(s.prompt)}
+                    type="button"
+                    key={s.label}
+                    onClick={() => handleSuggestionClick(s)}
                     disabled={isLoading}
-                    className="text-left rounded-xl border border-border/60 bg-white hover:bg-muted/30 hover:border-border px-4 py-3.5 transition-all duration-150 group hover:shadow-sm active:scale-[0.98]"
+                    className={`suggestion-chip ${s.chipColor}`}
                   >
-                    <div className="flex items-center gap-2 mb-1">
-                      <s.icon className="w-4 h-4 text-electric/70 group-hover:text-electric transition-colors duration-150" />
-                      <span className="text-[13px] font-semibold text-foreground">{s.label}</span>
-                    </div>
-                    <p className="text-[12px] text-muted-foreground leading-relaxed">{s.desc}</p>
+                    <s.icon className="w-3.5 h-3.5" />
+                    {s.label}
                   </button>
                 ))}
               </div>
             </EmptyStateWrapper>
 
-            {/* Input */}
-            <form onSubmit={handleSubmit}>
-              <div className={`flex items-end gap-2 rounded-2xl border px-4 py-3 transition-all duration-200 ${
-                canChat
-                  ? "border-border bg-muted/20 focus-within:border-electric/40 focus-within:bg-white focus-within:shadow-soft"
-                  : "border-border/40 bg-muted/10"
-              }`}>
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={!canChat || isLoading}
-                  placeholder={canChat ? "Ask PhylaX anything…" : "Please sign in to chat…"}
-                  rows={1}
-                  className="flex-1 bg-transparent text-[15px] text-foreground placeholder:text-muted-foreground/40 resize-none outline-none disabled:cursor-not-allowed min-h-[28px] max-h-[150px]"
-                />
-                <button type="submit" disabled={!canChat || !input.trim() || isLoading} aria-label="Send" className={`p-2 rounded-xl transition-all duration-150 flex-shrink-0 ${canChat && input.trim() && !isLoading ? "bg-gradient-brand text-white hover:shadow-glow" : "bg-muted/60 text-muted-foreground/30 cursor-not-allowed"}`}>
-                  <Send className="w-4 h-4" />
-                </button>
-              </div>
-            </form>
-
-            <p className="text-[10px] text-muted-foreground/30 text-center mt-3">
-              Non-custodial · User-signed execution · X Layer
+            <p className="text-[10px] text-center mt-4 tracking-wide" style={{ color: "var(--app-text-tertiary)", opacity: 0.35 }}>
+              Powered by OKX Onchain OS · Non-custodial
             </p>
           </div>
         </div>

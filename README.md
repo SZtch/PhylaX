@@ -3,11 +3,17 @@
 <div align="center">
   <img src="public/hero.jpg" alt="PhylaX - Trade, Scan, Execute" width="100%" />
 </div>
-> **Intent-based DeFi agent that scans tokens for risk, gets optimal swap quotes, and builds safe unsigned transactions on X Layer — powered by OKX skills. Your wallet always signs.**
+> 🛡️ **Intent-based DeFi agent that scans tokens for risk, gets optimal swap quotes, and builds safe unsigned transactions on X Layer.**
+> *Powered by OKX Agentic OS. Your wallet always signs.*
 
-Built for the **Build X-Agent Hackathon** · Participant ID: `2054917885347762176`
+<div align="center">
+  <b>Built for the Build X-Agent Hackathon</b> <br/>
+  Participant ID: <code>2054917885347762176</code>
+</div>
 
-**Product Positioning:** PhylaX is a human-in-the-loop DeFi trading copilot. It is **NOT** a fully autonomous trading bot, nor is it production-ready for unsupervised live-money trading. The server prepares data and unsigned transactions, but the user wallet always signs.
+<br/>
+
+**⚠️ Product Positioning:** PhylaX is a **human-in-the-loop** DeFi trading copilot. It is NOT a fully autonomous trading bot, nor is it production-ready for unsupervised live-money trading. The server prepares data and unsigned transactions, but the user wallet always executes the final signature.
 
 ---
 

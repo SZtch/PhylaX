@@ -41,7 +41,10 @@ PhylaX does:
 
 ## Why PhylaX Is Different
 
+- **Agentic Proactive UX** — instead of a passive prompt-box, the agent proactively asks clarifying questions to guide users through swap intent formation.
+- **DeepSeek & Claude Fallback** — built-in dual-LLM provider abstraction. Uses Anthropic Claude as primary, with automatic zero-downtime fallback to DeepSeek V4 if credits exhaust.
 - **Dual token scan** — scans both `fromToken` AND `toToken` before any quote. Most agents scan only once.
+- **Robust Token Resolution** — hardcoded shortcuts and decimal fallbacks for major assets (USDC, USDT, WETH) to prevent CLI ambiguity and execution failures.
 - **No-broadcast guarantee** — `/api/execute` returns only unsigned `txData`. Server never touches your funds.
 - **Approval replay prevention** — each approval ID is one-time use, expires in 5 minutes, consumed atomically via Redis.
 - **Onchain tx verification** — verifies approval tx `from`, `to`, and method selector before proceeding to execution.
@@ -134,7 +137,7 @@ Open: http://localhost:3000
 ## Tech Stack
 
 - **Next.js 16** — App Router, API routes, SSE streaming
-- **Anthropic Claude** — intent parsing, agent planning, tool use
+- **Anthropic Claude & DeepSeek V4** — intent parsing, agent planning, tool orchestration with auto-fallback
 - **OKX Onchain OS** — DEX routing, security scanning, signals
 - **Privy** — embedded wallet + auth
 - **Drizzle + Postgres** — audit log, sessions, approvals

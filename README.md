@@ -159,5 +159,4 @@ Open: http://localhost:3000
 **Participant ID:** `2054917885347762176`  
 **Track:** Builder (code)  
 **OKX Skills used:** `okx-dex-signal`, `okx-security`, `okx-dex-swap`, `okx-dex-token`, `okx-wallet-portfolio`, `okx-onchain-gateway`, `okx-agentic-wallet`, `okx-audit-log`  
-**Demo Video:** [Watch on Loom](https://loom.com/share/phylax-demo) *(link will be updated before final submission)*
-
+**Demo Video:** (https://youtu.be/JUhkzV5E6Tg) 

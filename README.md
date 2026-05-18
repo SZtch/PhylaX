@@ -1,4 +1,4 @@
-# PhylaX — DeFi Trading Agent
+
 
 <div align="center">
   <img src="public/hero.jpg" alt="PhylaX - Trade, Scan, Execute" width="100%" />

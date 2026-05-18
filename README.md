@@ -1,5 +1,8 @@
 # PhylaX — DeFi Trading Agent
 
+<div align="center">
+  <img src="public/hero.jpg" alt="PhylaX - Trade, Scan, Execute" width="100%" />
+</div>
 > **Intent-based DeFi agent that scans tokens for risk, gets optimal swap quotes, and builds safe unsigned transactions on X Layer — powered by OKX skills. Your wallet always signs.**
 
 Built for the **Build X-Agent Hackathon** · Participant ID: `2054917885347762176`

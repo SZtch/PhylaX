@@ -1,4 +1,4 @@
-
+# PhylaX — Intent-Based DeFi Trading AI Agent on X Layer
 
 <div align="center">
   <img src="public/hero.jpg" alt="PhylaX - Trade, Scan, Execute" width="100%" />
@@ -12,8 +12,6 @@
 </div>
 
 <br/>
-
-**⚠️ Product Positioning:** PhylaX is a **human-in-the-loop** DeFi trading copilot. It is NOT a fully autonomous trading bot, nor is it production-ready for unsupervised live-money trading. The server prepares data and unsigned transactions, but the user wallet always executes the final signature.
 
 ---
 

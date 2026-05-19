@@ -83,3 +83,7 @@ lint-output.txt
 # backups and archives
 .patch-backup/
 *.zip
+
+# Local-only sensitive smoke/debug scripts
+scripts/smoke-private-key-live.ts
+scripts/verify-privy-secret.ts

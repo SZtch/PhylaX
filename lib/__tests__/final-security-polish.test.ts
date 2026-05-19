@@ -212,7 +212,12 @@ async function runTests() {
     privyUserId: "did:privy:test",
     amountUsd: 10
   });
-  assert(basePolicy.allowed, "Risk policy allows Base.");
+  const isBaseSupported = SUPPORTED_CHAINS.some(c => c.chainIndex === "8453" && c.enabled);
+  if (!isBaseSupported) {
+    assert(!basePolicy.allowed, "Risk policy rejects Base (Coming Soon).");
+  } else {
+    assert(basePolicy.allowed, "Risk policy allows Base.");
+  }
 
   const bscPolicy = await enforceRiskPolicy({
     chainId: "56",
@@ -222,7 +227,12 @@ async function runTests() {
     privyUserId: "did:privy:test",
     amountUsd: 10
   });
-  assert(bscPolicy.allowed, "Risk policy allows BSC.");
+  const isBscSupported = SUPPORTED_CHAINS.some(c => c.chainIndex === "56" && c.enabled);
+  if (!isBscSupported) {
+    assert(!bscPolicy.allowed, "Risk policy rejects BSC (Coming Soon).");
+  } else {
+    assert(bscPolicy.allowed, "Risk policy allows BSC.");
+  }
 
   const isEthSupported = SUPPORTED_CHAINS.some(c => c.chainIndex === "1");
   const ethPolicy = await enforceRiskPolicy({

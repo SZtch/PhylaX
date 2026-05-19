@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, MessageSquare, Trash2, Bot, BarChart3, Settings, Moon, Sun, Zap } from "lucide-react";
+import {
+  Plus, MessageSquare, Trash2, Bot, BarChart3, Settings, Moon, Sun, Zap,
+  History, Info, MessageCircle, Search, Radio, Shield, Wallet,
+} from "lucide-react";
 
 export interface ChatSession {
   id: string;
@@ -9,16 +12,19 @@ export interface ChatSession {
   createdAt: number;
 }
 
-export type SidebarView = "agent" | "portfolio" | "settings";
+export type SidebarView = "agent" | "portfolio" | "activity" | "settings" | "about";
+export type AgentTab = "chat" | "analysis" | "signals" | "execution" | "wallet";
 
 interface Props {
   sessions: ChatSession[];
   activeSessionId: string;
   activeView: SidebarView;
+  agentTab?: AgentTab;
   onNewChat: () => void;
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
   onChangeView: (view: SidebarView) => void;
+  onChangeAgentTab?: (tab: AgentTab) => void;
   isLightMode?: boolean;
   onToggleTheme?: () => void;
 }
@@ -34,14 +40,24 @@ function timeAgo(ts: number): string {
   return `${days}d ago`;
 }
 
+const AGENT_TABS: { icon: typeof MessageCircle; label: string; tab: AgentTab }[] = [
+  { icon: MessageCircle, label: "Chat", tab: "chat" },
+  { icon: Search, label: "Analysis", tab: "analysis" },
+  { icon: Radio, label: "Signals", tab: "signals" },
+  { icon: Shield, label: "Execution", tab: "execution" },
+  { icon: Wallet, label: "Wallet", tab: "wallet" },
+];
+
 export function AppSidebar({
   sessions,
   activeSessionId,
   activeView,
+  agentTab = "chat",
   onNewChat,
   onSelectSession,
   onDeleteSession,
   onChangeView,
+  onChangeAgentTab,
   isLightMode,
   onToggleTheme,
 }: Props) {
@@ -83,9 +99,11 @@ export function AppSidebar({
       {/* ── Main nav ── */}
       <div className="px-3 pb-2 space-y-0.5 stagger-children">
         {[
-          { icon: Bot, label: "Agent", view: "agent" as SidebarView },
+          { icon: Bot, label: "Agent Console", view: "agent" as SidebarView },
           { icon: BarChart3, label: "Portfolio", view: "portfolio" as SidebarView },
+          { icon: History, label: "Activity", view: "activity" as SidebarView },
           { icon: Settings, label: "Settings", view: "settings" as SidebarView },
+          { icon: Info, label: "About", view: "about" as SidebarView },
         ].map(({ icon: Icon, label, view }) => {
           const active = activeView === view;
           return (
@@ -125,15 +143,71 @@ export function AppSidebar({
         })}
       </div>
 
+      {/* ── Agent Console tabs (when agent view is active) ── */}
+      {activeView === "agent" && (
+        <>
+          <div className="mx-4 my-2" style={{ borderTop: `1px solid ${t.borderDivider}` }} />
+          <div className="px-3 pb-1">
+            <p
+              className="text-[10px] font-semibold uppercase tracking-[0.1em] px-4 mb-2"
+              style={{ color: t.textFaint }}
+            >
+              Console
+            </p>
+            <div className="space-y-0.5">
+              {AGENT_TABS.map(({ icon: Icon, label, tab }) => {
+                const active = agentTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => {
+                      onChangeAgentTab?.(tab);
+                      if (activeView !== "agent") onChangeView("agent");
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 rounded-full text-[12px] font-medium transition-all duration-200 text-left"
+                    style={{
+                      background: active ? t.bgHoverStrong : "transparent",
+                      color: active ? t.textPrimary : t.textMuted,
+                    }}
+                    onMouseEnter={e => {
+                      if (!active) {
+                        e.currentTarget.style.background = t.bgHover;
+                        e.currentTarget.style.color = t.hoverText;
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!active) {
+                        e.currentTarget.style.background = "transparent";
+                        e.currentTarget.style.color = t.textMuted;
+                      }
+                    }}
+                  >
+                    <Icon
+                      style={{
+                        width: 13,
+                        height: 13,
+                        color: active ? "oklch(0.7 0.19 260)" : "inherit",
+                        flexShrink: 0,
+                      }}
+                    />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
       {/* ── Divider ── */}
       <div className="mx-4 my-2" style={{ borderTop: `1px solid ${t.borderDivider}` }} />
 
-      {/* ── Sessions (agent view only) ── */}
-      {activeView === "agent" && (
+      {/* ── Sessions (agent view, chat tab only) ── */}
+      {activeView === "agent" && agentTab === "chat" && (
         <>
           <div className="px-3 pb-2">
             <button
-              onClick={() => { onNewChat(); onChangeView("agent"); }}
+              onClick={() => { onNewChat(); onChangeView("agent"); onChangeAgentTab?.("chat"); }}
               className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-full text-[12px] font-medium transition-all duration-200 group"
               style={{
                 background: "transparent",
@@ -172,7 +246,7 @@ export function AppSidebar({
               </div>
             )}
             {sessions.map((session) => {
-              const isActive = session.id === activeSessionId && activeView === "agent";
+              const isActive = session.id === activeSessionId && activeView === "agent" && agentTab === "chat";
               return (
                 <div
                   key={session.id}
@@ -193,7 +267,7 @@ export function AppSidebar({
                       e.currentTarget.style.color = t.textMuted;
                     }
                   }}
-                  onClick={() => { onSelectSession(session.id); onChangeView("agent"); }}
+                  onClick={() => { onSelectSession(session.id); onChangeView("agent"); onChangeAgentTab?.("chat"); }}
                 >
                   <MessageSquare
                     style={{
@@ -228,7 +302,8 @@ export function AppSidebar({
         </>
       )}
 
-      {activeView !== "agent" && <div className="flex-1" />}
+      {/* Spacer when not showing sessions */}
+      {(activeView !== "agent" || agentTab !== "chat") && <div className="flex-1" />}
 
       {/* ── Footer ── */}
       <div

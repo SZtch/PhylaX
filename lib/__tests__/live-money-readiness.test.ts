@@ -105,17 +105,17 @@ async function runTests() {
   (global as any).__mockGetQuotePreflightHandler = async () => ({ quote: "100", fromSymbol: "USDC", toSymbol: "TOKEN", meta: {} });
   
   // Test 6: get_swap_quote blocks when scanToken throws
-  (global as any).__mockScanTokenHandler = async () => { throw new Error("Network error"); };
+  (global as any).__mockScanToken = async () => { throw new Error("Network error"); };
   let swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: mockChain }, { conversationId: "c1", walletAddress: mockWallet });
   assert(swapRes.blocked === true && swapRes.error.includes("Token safety scan unavailable"), "get_swap_quote blocks when scanToken throws.");
 
   // Test 7: get_swap_quote blocks when scan result is unknown/unavailable
-  (global as any).__mockScanTokenHandler = async () => ({ decision: "unknown" });
+  (global as any).__mockScanToken = async () => ({ decision: "unknown" });
   swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: mockChain }, { conversationId: "c1", walletAddress: mockWallet });
   assert(swapRes.blocked === true && swapRes.error.includes("Token safety scan unavailable"), "get_swap_quote blocks when scan result is unknown/unavailable.");
 
   // Test 8: get_swap_quote blocks when executionAllowed=false
-  (global as any).__mockScanTokenHandler = async () => ({ decision: "high_risk", executionAllowed: false, isHoneypot: false, riskLevel: "HIGH", triggeredLabels: [], meta: {} });
+  (global as any).__mockScanToken = async () => ({ decision: "high_risk", executionAllowed: false, isHoneypot: false, riskLevel: "HIGH", triggeredLabels: [], meta: {} });
   swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: mockChain, risk_mode: "degen" }, { conversationId: "c1", walletAddress: mockWallet });
   assert(swapRes.blocked === true && swapRes.error.includes("High risk or honeypot token detected"), "get_swap_quote blocks when executionAllowed=false.");
 

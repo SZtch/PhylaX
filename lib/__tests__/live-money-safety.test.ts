@@ -68,6 +68,20 @@ async function runTests() {
       used: false
     }
   });
+  (global as any).__mockPeekApproval = async () => ({
+    found: true,
+    approval: {
+      id: "test-approval",
+      tokenAddress: "0xtoken",
+      chain: "x-layer",
+      walletAddress: "", // empty!
+      budgetUsd: 10,
+      slippageLimitPercent: 2,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 300000,
+      used: false
+    }
+  });
 
   const { POST: ExecutePost } = await import("../../app/api/execute/route");
   let req = new Request("http://localhost/api/execute", {
@@ -82,6 +96,20 @@ async function runTests() {
   // Test 1.4: /api/execute rejects wallet mismatch
   (global as any).__mockValidateAndConsumeApproval = async () => ({
     valid: true,
+    approval: {
+      id: "test-approval",
+      tokenAddress: "0xtoken",
+      chain: "x-layer",
+      walletAddress: "0xDifferentWallet",
+      budgetUsd: 10,
+      slippageLimitPercent: 2,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 300000,
+      used: false
+    }
+  });
+  (global as any).__mockPeekApproval = async () => ({
+    found: true,
     approval: {
       id: "test-approval",
       tokenAddress: "0xtoken",
@@ -119,9 +147,29 @@ async function runTests() {
       used: false
     }
   });
+  (global as any).__mockPeekApproval = async () => ({
+    found: true,
+    approval: {
+      id: "test-approval",
+      tokenAddress: "0xtoken",
+      chain: "x-layer",
+      walletAddress: "0xabcd", // lowercase matches session's 0xABCD
+      budgetUsd: 10,
+      slippageLimitPercent: 2,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 300000,
+      used: false
+    }
+  });
 
   // In non-live mode, it returns execution_disabled — that means wallet check passed
   process.env.ENABLE_LIVE_EXECUTION = "false";
+  (global as any).__mockScanToken = async () => ({
+    riskLevel: "LOW", decision: "safe", executionAllowed: true, isScanned: true,
+    isHoneypot: false, triggeredLabels: [],
+    meta: { source: "mock", provider: "mock", chainIndex: "196", chainName: "mock", chainSlug: "mock", timestamp: "" }
+  });
+
   req = new Request("http://localhost/api/execute", {
     method: "POST",
     headers: { "x-forwarded-for": "127.0.0.1" },
@@ -132,6 +180,8 @@ async function runTests() {
   assert(res.status === 200 && data.result?.status === "execution_disabled", "/api/execute accepts matching verified wallet (passes to execution_disabled in demo).");
 
   delete (global as any).__mockValidateAndConsumeApproval;
+  delete (global as any).__mockPeekApproval;
+  delete (global as any).__mockScanToken;
 
   // ── 2. Prompt Injection / LLM-controlled risk and budget ───────────────────
   console.log("\n── 2. Prompt Injection Hardening ──");
@@ -204,7 +254,7 @@ async function runTests() {
   });
 
   // Test 3.1: MEDIUM risk blocks quote
-  (global as any).__mockScanTokenHandler = async () => ({
+  (global as any).__mockScanToken = async () => ({
     riskLevel: "MEDIUM", decision: "high_risk", executionAllowed: false, isScanned: true,
     isHoneypot: false, triggeredLabels: ["Pump"],
     meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
@@ -220,7 +270,7 @@ async function runTests() {
   assert(!sr.quote, "MEDIUM risk does not produce a quote.");
 
   // Test 3.2: isPump/isDumping/isWash blocks quote
-  (global as any).__mockScanTokenHandler = async () => ({
+  (global as any).__mockScanToken = async () => ({
     riskLevel: "MEDIUM", decision: "high_risk", executionAllowed: false, isScanned: true,
     isHoneypot: false, triggeredLabels: ["Pump", "Wash Trading"],
     meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
@@ -229,12 +279,12 @@ async function runTests() {
   assert((swapRes as Record<string, unknown>).blocked === true, "isPump/isWash triggers block quote.");
 
   // Test 3.3: scan failure blocks quote
-  (global as any).__mockScanTokenHandler = async () => { throw new Error("Network error"); };
+  (global as any).__mockScanToken = async () => { throw new Error("Network error"); };
   swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "", walletAddress: "0xmockwallet" });
   assert((swapRes as Record<string, unknown>).blocked === true, "scan failure blocks quote.");
 
   // Test 3.4: executionAllowed=false blocks quote
-  (global as any).__mockScanTokenHandler = async () => ({
+  (global as any).__mockScanToken = async () => ({
     riskLevel: "HIGH", decision: "high_risk", executionAllowed: false, isScanned: true,
     isHoneypot: false, triggeredLabels: [],
     meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
@@ -243,7 +293,7 @@ async function runTests() {
   assert((swapRes as Record<string, unknown>).blocked === true, "executionAllowed=false blocks quote.");
 
   // Test 3.5: degen does not bypass honeypot
-  (global as any).__mockScanTokenHandler = async () => ({
+  (global as any).__mockScanToken = async () => ({
     riskLevel: "HIGH", decision: "high_risk", executionAllowed: false, isScanned: true,
     isHoneypot: true, triggeredLabels: ["Honeypot"],
     meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
@@ -252,7 +302,7 @@ async function runTests() {
   assert((swapRes as Record<string, unknown>).blocked === true, "degen does not bypass honeypot.");
 
   // Test 3.6: LOW risk allows quote
-  (global as any).__mockScanTokenHandler = async () => ({
+  (global as any).__mockScanToken = async () => ({
     riskLevel: "LOW", decision: "safe", executionAllowed: true, isScanned: true,
     isHoneypot: false, triggeredLabels: [],
     meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
@@ -263,8 +313,16 @@ async function runTests() {
     balance: "100",
     meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
   });
+  (global as any).__mockGetSwapTxData = async () => ({
+    txData: { to: "0x123", data: "0xabc", value: "0x0" },
+    error: null,
+    meta: { source: "okx_real", provider: "OKX", chainIndex: "196", chainName: "X Layer", chainSlug: "xlayer", timestamp: new Date().toISOString() }
+  });
 
   swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "", walletAddress: "0xmockwallet" });
+  if ((swapRes as Record<string, unknown>).blocked === true) {
+    console.error("Test 3.6 BLOCKED:", swapRes);
+  }
   assert((swapRes as Record<string, unknown>).blocked !== true && (swapRes as Record<string, unknown>).quote !== undefined, "LOW risk allows quote.");
 
   // Test 3.7: Base live execution blocked as Coming Soon
@@ -292,7 +350,7 @@ async function runTests() {
   swapRes = await swapTool.execute({ to_address: "0xtoken", amount: 10, chain: "196" }, { conversationId: "", walletAddress: "0xmockwallet" });
   assert((swapRes as Record<string, unknown>).blocked === true && (swapRes as Record<string, unknown>).error.includes("Insufficient balance"), "Insufficient balance blocks X Layer quote.");
 
-  delete (global as any).__mockScanTokenHandler;
+  delete (global as any).__mockScanToken;
   delete (global as any).__mockCheckBalance;
   delete (global as any).__mockGetQuotePreflightHandler;
 

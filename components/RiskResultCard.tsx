@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { ShieldCheck, Ban, ShieldAlert, ShieldOff, ShieldQuestion } from "lucide-react";
+import { Card } from "./ui/card";
 
 interface Props {
   tokenSymbol: string;
@@ -78,32 +79,32 @@ export function RiskResultCard({ tokenSymbol, tokenAddress, riskLevel, details }
   const Icon = c.icon;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="overflow-hidden rounded-2xl border"
-      style={{ background: c.bg, borderColor: c.border, boxShadow: `0 4px 24px ${c.glowColor}` }}
-    >
-      <div className="px-4 py-3.5 flex items-center gap-3">
+    <Card className={`overflow-hidden border-l-4 ${
+      riskLevel === "safe" ? "border-l-[var(--app-success)]" :
+      riskLevel === "high_risk" ? "border-l-[var(--app-danger)]" :
+      riskLevel === "unknown" ? "border-l-[var(--app-warning)]" :
+      "border-l-muted-foreground"
+    }`}>
+      <div className="px-4 py-4 flex items-center gap-3">
         {/* Icon */}
-        <div className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: c.glowColor, border: `1px solid ${c.border}` }}>
-          <Icon className="w-5 h-5" style={{ color: c.iconColor }} />
+        <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center bg-muted/50`}>
+          <Icon className="w-5 h-5 text-muted-foreground" style={{ color: c.iconColor }} />
         </div>
 
         {/* Label + token */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[13px] font-bold" style={{ color: c.labelColor }}>
+            <span className="text-sm font-bold" style={{ color: c.labelColor }}>
               {c.label}
             </span>
-            <span className="text-[11px] font-bold text-foreground">{tokenSymbol}</span>
+            <span className="text-xs font-bold text-foreground">{tokenSymbol}</span>
           </div>
-          <p className="text-[10px] mt-0.5" style={{ color: c.labelColor, opacity: 0.7 }}>{c.sublabel}</p>
+          <p className="text-xs mt-0.5 text-muted-foreground">{c.sublabel}</p>
         </div>
 
         {/* Risk meter */}
         <div className="shrink-0 text-right">
-          <div className="w-20 h-1.5 rounded-full overflow-hidden bg-black/8">
+          <div className="w-20 h-1.5 rounded-full overflow-hidden bg-muted">
             <motion.div
               className="h-full rounded-full"
               style={{ background: c.barColor }}
@@ -112,7 +113,7 @@ export function RiskResultCard({ tokenSymbol, tokenAddress, riskLevel, details }
               transition={{ duration: 0.6, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
             />
           </div>
-          <p className="text-[9px] mt-1 font-bold uppercase tracking-wider" style={{ color: c.labelColor, opacity: 0.6 }}>
+          <p className="text-[10px] mt-1 font-bold uppercase tracking-wider text-muted-foreground">
             Risk level
           </p>
         </div>
@@ -120,19 +121,19 @@ export function RiskResultCard({ tokenSymbol, tokenAddress, riskLevel, details }
 
       {/* Address */}
       <div className="px-4 pb-3 flex items-center gap-2">
-        <p className="text-[10px] font-mono truncate" style={{ color: c.labelColor, opacity: 0.5 }}>
+        <p className="text-xs font-mono truncate text-muted-foreground">
           {tokenAddress}
         </p>
       </div>
 
       {/* Details */}
       {details && (
-        <div className="px-4 pb-3.5">
-          <p className="text-[11px] leading-relaxed" style={{ color: c.labelColor, opacity: 0.75 }}>
+        <div className="px-4 pb-4">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             {details}
           </p>
         </div>
       )}
-    </motion.div>
+    </Card>
   );
 }

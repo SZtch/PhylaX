@@ -45,6 +45,8 @@ PhylaX does:
 | `okx-agentic-wallet` | Wallet status and account info | `onchainos wallet status` |
 | `okx-audit-log` | Audit log path for troubleshooting | Local path resolution |
 
+The codebase integrates directly with the OKX Onchain OS through `lib/okx.ts` at runtime, which serves as the core integration boundary between PhylaX and the OKX X-Agent execution capabilities.
+
 ---
 
 ## Why PhylaX Is Different
@@ -166,6 +168,8 @@ Open: http://localhost:3000
 ---
 
 ## Submission
+
+The submission is generated and managed using the OKX CLI: `xagent-plugin submit`
 
 **Participant ID:** `2054917885347762176`  
 **Track:** Builder (code)  

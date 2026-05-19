@@ -15,6 +15,9 @@ import {
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { SimulationResult } from "../lib/schemas";
 import { addTx } from "../lib/tx-store";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 
 type ExecutionState =
   | "idle"
@@ -332,22 +335,18 @@ export function QuoteCard({
   }, [approvalId, walletAddress, getAccessToken, getIdentityToken, quote, riskAcknowledged, isExpired, isHighRisk, walletMismatch, currentNeedsApproval, approveTxData, approvalTxHash]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-card border border-border rounded-2xl overflow-hidden shadow-soft"
-    >
+    <Card className="overflow-hidden">
       {/* ── SUCCESS STATE: replace entire card ── */}
       {execState === "confirmed" && (
-        <div className="p-4 space-y-3">
-          <div className="flex items-center gap-2" style={{ color: "oklch(0.6 0.17 160)" }}>
+        <CardContent className="p-6 space-y-4">
+          <div className="flex items-center gap-2 text-[var(--app-success)]">
             <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
             <span className="text-sm font-bold">Transaction confirmed</span>
           </div>
-          <div className="rounded-xl px-3 py-2.5 text-xs space-y-0.5" style={{ background: "oklch(0.5 0.15 160 / 0.08)", border: "1px solid oklch(0.55 0.15 160 / 0.15)", color: "oklch(0.6 0.17 160)" }}>
+          <div className="rounded-xl px-4 py-3 text-xs space-y-1 bg-[var(--app-success)]/10 border border-[var(--app-success)]/20 text-[var(--app-success)]">
             <p><span className="font-semibold">{fromSymbol} → {toSymbol ?? "Target"}</span></p>
             <p>Output: ~${quote.expectedOutputUsd.toFixed(2)}</p>
-            <p className="font-mono text-[10px] break-all" style={{ color: "oklch(0.55 0.15 160)" }}>{txHash}</p>
+            <p className="font-mono text-[10px] break-all">{txHash}</p>
           </div>
           <div className="flex gap-2">
             {explorerUrl && (
@@ -355,340 +354,326 @@ export function QuoteCard({
                 href={explorerUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex-1 py-2 px-3 rounded-lg text-[11px] font-bold flex items-center justify-center gap-2 transition-colors"
-                style={{ background: "oklch(0.5 0.15 160 / 0.1)", color: "oklch(0.6 0.17 160)", border: "1px solid oklch(0.55 0.15 160 / 0.2)" }}
+                className="flex-1 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-colors bg-[var(--app-success)]/10 text-[var(--app-success)] border border-[var(--app-success)]/20 hover:bg-[var(--app-success)]/20"
               >
                 Explorer <ExternalLink className="w-3 h-3" />
               </a>
             )}
           </div>
-          <p className="text-[10px] text-muted-foreground/50 text-center">Check History in Portfolio for details.</p>
-        </div>
+          <p className="text-[10px] text-muted-foreground text-center">Check History in Portfolio for details.</p>
+        </CardContent>
       )}
 
       {/* ── NORMAL CARD STATE ── */}
       {execState !== "confirmed" && (
         <>
-      {/* Header with countdown */}
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between" style={{ background: "oklch(0 0 0 / 0.06)" }}>
-        <div className="flex items-center gap-2">
-          <Eye className="w-4 h-4 text-electric" />
-          <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">Trade Preview</h4>
-        </div>
-        {/* Countdown timer */}
-        {!isExpired && execState === "idle" && (
-          <div
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tabular-nums"
-            style={{
-              background: secondsLeft < 30 ? "oklch(0.55 0.22 27 / 0.08)" : "oklch(0.5 0.02 260 / 0.08)",
-              color: secondsLeft < 30 ? "oklch(0.7 0.2 27)" : "var(--app-text-secondary)",
-              border: `1px solid ${secondsLeft < 30 ? "oklch(0.55 0.22 27 / 0.2)" : "oklch(0.5 0.02 260 / 0.15)"}`,
-            }}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full inline-block ${secondsLeft < 30 ? "bg-red-400 animate-pulse" : "bg-muted-foreground/40"}`} />
-            {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}
-          </div>
-        )}
-        {isExpired && (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: "oklch(0.55 0.22 27 / 0.1)", color: "oklch(0.7 0.2 27)", border: "1px solid oklch(0.55 0.22 27 / 0.2)" }}>
-            <XCircle className="w-3 h-3" /> Expired
-          </span>
-        )}
-      </div>
-
-      <div className="p-4 space-y-3">
-        {/* Route */}
-        <div className="flex items-center gap-3">
-          <span className="font-bold text-foreground text-sm">{fromSymbol}</span>
-          <ArrowRight className="w-4 h-4 text-muted-foreground" />
-          <span className="font-bold text-foreground text-sm">{toSymbol ?? "Target"}</span>
-        </div>
-
-        {/* Metrics */}
-        <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-xl px-3 py-2.5" style={{ background: "oklch(0.5 0.02 260 / 0.1)" }}>
-            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "oklch(0.6 0.015 260)" }}>Expected Output</p>
-            <p className="text-sm font-bold text-foreground">${quote.expectedOutputUsd.toFixed(2)}</p>
-          </div>
-          <div className="rounded-xl px-3 py-2.5" style={{ background: "oklch(0.5 0.02 260 / 0.1)" }}>
-            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "oklch(0.6 0.015 260)" }}>Slippage</p>
-            <p className="text-sm font-bold" style={{ color: slippageOk ? "oklch(0.6 0.17 160)" : "oklch(0.7 0.2 27)" }}>{quote.slippage.toFixed(2)}%</p>
-          </div>
-          <div className="rounded-xl px-3 py-2.5" style={{ background: "oklch(0.5 0.02 260 / 0.1)" }}>
-            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "oklch(0.6 0.015 260)" }}>Gas Fee</p>
-            <p className="text-sm font-bold text-foreground">${quote.gasFeeUsd.toFixed(4)}</p>
-          </div>
-        </div>
-
-        {/* Route info */}
-        <div className="text-[10px] rounded-lg px-3 py-2 font-mono break-all" style={{ color: "oklch(0.65 0.015 260)", background: "oklch(0.5 0.02 260 / 0.08)" }}>
-          <p>Amount: {amount ? `$${amount}` : "Unknown"} {fromSymbol}</p>
-          <p>Token: {tokenAddress || "Unknown"}</p>
-          <p>Router: {quote.route}</p>
-        </div>
-
-        {/* Chain & Security info */}
-        <div className="space-y-1.5 text-xs">
-          {chainConfig ? (
-            <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: "oklch(0.5 0.02 260 / 0.08)", border: "1px solid oklch(0.5 0.02 260 / 0.12)", color: "oklch(0.65 0.015 260)" }}>
-              <span className="font-semibold">{chainConfig.name}</span>
-              <span>(ID: {chainConfig.id})</span>
+          {/* Header with countdown */}
+          <CardHeader className="bg-muted/30 px-6 py-4 flex flex-row items-center justify-between space-y-0 border-b">
+            <div className="flex items-center gap-2">
+              <Eye className="w-4 h-4 text-primary" />
+              <CardTitle className="text-sm uppercase tracking-widest text-foreground">Trade Preview</CardTitle>
             </div>
-          ) : null}
+            {/* Countdown timer */}
+            {!isExpired && execState === "idle" && (
+              <Badge variant={secondsLeft < 30 ? "destructive" : "secondary"} className="tabular-nums">
+                <span className={`w-1.5 h-1.5 rounded-full inline-block mr-1.5 ${secondsLeft < 30 ? "bg-white animate-pulse" : "bg-muted-foreground/40"}`} />
+                {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}
+              </Badge>
+            )}
+            {isExpired && (
+              <Badge variant="destructive">
+                <XCircle className="w-3 h-3 mr-1" /> Expired
+              </Badge>
+            )}
+          </CardHeader>
 
-          {scanDecision === "safe" ? (
-            <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: "oklch(0.45 0.17 155 / 0.12)", border: "1px solid oklch(0.55 0.17 155 / 0.25)", color: "oklch(0.6 0.17 155)" }}>
-              <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
-              LOW risk by current scan
+          <CardContent className="p-6 space-y-4">
+            {/* Route */}
+            <div className="flex items-center gap-3">
+              <span className="font-bold text-foreground text-sm">{fromSymbol}</span>
+              <ArrowRight className="w-4 h-4 text-muted-foreground" />
+              <span className="font-bold text-foreground text-sm">{toSymbol ?? "Target"}</span>
             </div>
-          ) : scanDecision ? (
-            <div className="flex items-center gap-2 rounded-lg px-3 py-2 font-semibold" style={{ background: "oklch(0.55 0.22 27 / 0.1)", border: "1px solid oklch(0.55 0.22 27 / 0.25)", color: "oklch(0.7 0.2 27)" }}>
-              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-              BLOCKED: {scanDecision === "high_risk" ? "MEDIUM/HIGH risk detected" : "Unknown risk state"}
-            </div>
-          ) : null}
 
-          {/* Phase 2: Pre-sign simulation badge */}
-          {preSignSimulation != null && (
-            <div
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
-              style={
-                preSignSimulation.ok
-                  ? { background: "oklch(0.45 0.17 155 / 0.1)", border: "1px solid oklch(0.55 0.17 155 / 0.22)", color: "oklch(0.6 0.17 155)" }
-                  : { background: "oklch(0.55 0.22 27 / 0.08)", border: "1px solid oklch(0.55 0.22 27 / 0.2)", color: "oklch(0.7 0.2 27)" }
-              }
-            >
-              {preSignSimulation.ok ? (
-                <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
-              ) : (
+            {/* Metrics */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg bg-muted/50 px-3 py-2.5">
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-muted-foreground">Expected Output</p>
+                <p className="text-sm font-bold text-foreground">${quote.expectedOutputUsd.toFixed(2)}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 px-3 py-2.5">
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-muted-foreground">Slippage</p>
+                <p className={`text-sm font-bold ${slippageOk ? "text-[var(--app-success)]" : "text-destructive"}`}>{quote.slippage.toFixed(2)}%</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 px-3 py-2.5">
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-muted-foreground">Gas Fee</p>
+                <p className="text-sm font-bold text-foreground">${quote.gasFeeUsd.toFixed(4)}</p>
+              </div>
+            </div>
+
+            {/* Route info */}
+            <div className="text-[10px] rounded-lg px-3 py-2 font-mono break-all text-muted-foreground bg-muted/30">
+              <p>Amount: {amount ? `$${amount}` : "Unknown"} {fromSymbol}</p>
+              <p>Token: {tokenAddress || "Unknown"}</p>
+              <p>Router: {quote.route}</p>
+            </div>
+
+            {/* Chain & Security info */}
+            <div className="space-y-2 text-xs">
+              {chainConfig ? (
+                <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-muted/30 border border-border text-muted-foreground">
+                  <span className="font-semibold">{chainConfig.name}</span>
+                  <span>(ID: {chainConfig.id})</span>
+                </div>
+              ) : null}
+
+              {scanDecision === "safe" ? (
+                <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-[var(--app-success)]/10 border border-[var(--app-success)]/20 text-[var(--app-success)]">
+                  <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
+                  LOW risk by current scan
+                </div>
+              ) : scanDecision ? (
+                <div className="flex items-center gap-2 rounded-lg px-3 py-2 font-semibold bg-destructive/10 border border-destructive/20 text-destructive">
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                  BLOCKED: {scanDecision === "high_risk" ? "MEDIUM/HIGH risk detected" : "Unknown risk state"}
+                </div>
+              ) : null}
+
+              {/* Phase 2: Pre-sign simulation badge */}
+              {preSignSimulation != null && (
+                <div
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${
+                    preSignSimulation.ok
+                      ? "bg-[var(--app-success)]/10 border-[var(--app-success)]/20 text-[var(--app-success)]"
+                      : "bg-destructive/10 border-destructive/20 text-destructive"
+                  }`}
+                >
+                  {preSignSimulation.ok ? (
+                    <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
+                  ) : (
+                    <XCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  )}
+                  <span className="font-semibold">
+                    Simulation: {preSignSimulation.ok ? "Passed" : "Blocked"}
+                  </span>
+                  {preSignSimulation.gasUsed && (
+                    <span className="ml-auto font-mono text-[10px] opacity-70">
+                      gas: {preSignSimulation.gasUsed}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {walletAddress && targetWalletAddress && (
+                <div className={`flex items-center gap-2 border rounded-lg px-3 py-2 ${walletMismatch ? "font-semibold bg-destructive/10 border-destructive/20 text-destructive" : "text-muted-foreground bg-muted/30 border-border"}`}>
+                  <Lock className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>Verified Wallet: {targetWalletAddress.slice(0,6)}...{targetWalletAddress.slice(-4)}</span>
+                  {walletMismatch && <span className="ml-auto">Mismatch! Connect correct wallet.</span>}
+                </div>
+              )}
+            </div>
+
+            {/* Slippage warning */}
+            {!slippageOk && (
+              <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 bg-warning/10 border border-warning/20 text-warning">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                High slippage detected. Review carefully before confirming.
+              </div>
+            )}
+
+            {isExpired && (
+              <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 bg-destructive/10 border border-destructive/20 text-destructive">
                 <XCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                Quote expired, request a new quote.
+              </div>
+            )}
+
+            {/* ── Execution Section ── */}
+            <AnimatePresence mode="wait">
+              {showExecute && approvalId && execState === "idle" && (
+                <motion.div key="confirm-button" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="space-y-4 pt-4 border-t border-border">
+                  {walletAddress ? (
+                    <>
+                      <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2.5 bg-primary/10 border border-primary/20">
+                        <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 text-primary mt-0.5" />
+                        <div>
+                          <p className="font-semibold mb-0.5 text-primary">User-Signed Execution (Trade Hard Cap Applies)</p>
+                          <p className="text-primary/80">Your wallet will ask you to review and sign. PhylaX never signs for you.</p>
+                        </div>
+                      </div>
+                      
+                      {liveMode ? (
+                        <label className="flex items-start gap-2 text-[11px] text-muted-foreground cursor-pointer bg-muted/30 p-2.5 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                          <input 
+                            type="checkbox" 
+                            className="mt-0.5 rounded border-input text-primary focus:ring-primary"
+                            checked={riskAcknowledged}
+                            onChange={(e) => setRiskAcknowledged(e.target.checked)}
+                          />
+                          <span>
+                            I acknowledge the risks of on-chain trading and accept that PhylaX is not responsible for any losses.
+                          </span>
+                        </label>
+                      ) : null}
+
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          id="confirm-execute-btn"
+                          onClick={handleExecute}
+                          disabled={(liveMode && !riskAcknowledged) || isExpired || isHighRisk || !!walletMismatch || execState !== "idle"}
+                          className={`w-full ${
+                            (!liveMode || riskAcknowledged) && !isExpired && !isHighRisk && !walletMismatch && execState === "idle"
+                              ? "" 
+                              : "bg-muted text-muted-foreground hover:bg-muted"
+                          }`}
+                        >
+                          <ShieldCheck className="w-4 h-4 mr-2" />
+                          {currentNeedsApproval ? "Approve USDC spending" : "Sign swap in wallet"}
+                        </Button>
+                        
+                        {walletMismatch && (
+                          <Button
+                            variant="destructive"
+                            onClick={onConnectWallet}
+                            className="w-full"
+                          >
+                            Switch to {targetWalletAddress?.slice(0,6)}...
+                          </Button>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2.5 text-warning bg-warning/10 border border-warning/20">
+                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                        <p>Wallet connection required to sign and submit this transaction.</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={onConnectWallet}
+                        className="w-full"
+                      >
+                        Connect Wallet to Sign
+                      </Button>
+                    </>
+                  )}
+                </motion.div>
               )}
-              <span className="font-semibold">
-                Simulation: {preSignSimulation.ok ? "Passed" : "Blocked"}
-              </span>
-              {preSignSimulation.gasUsed && (
-                <span className="ml-auto font-mono text-[10px] opacity-70">
-                  gas: {preSignSimulation.gasUsed}
-                </span>
+
+              {!showExecute && execState === "idle" && (
+                <motion.div key="exec-disabled" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pt-4 border-t border-border">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 border border-border rounded-lg px-3 py-2.5">
+                    <Lock className="w-3.5 h-3.5 flex-shrink-0" />
+                    Live execution disabled on {chainConfig?.name || "this chain"}
+                  </div>
+                </motion.div>
               )}
-            </div>
-          )}
 
-          {walletAddress && targetWalletAddress && (
-            <div className={`flex items-center gap-2 border rounded-lg px-3 py-2 ${walletMismatch ? "font-semibold" : "text-muted-foreground"}`} style={walletMismatch ? { background: "oklch(0.55 0.22 27 / 0.08)", borderColor: "oklch(0.55 0.22 27 / 0.2)", color: "oklch(0.7 0.2 27)" } : { background: "oklch(0.5 0.02 260 / 0.06)", borderColor: "var(--app-card-border)" }}>
-              <Lock className="w-3.5 h-3.5 flex-shrink-0" />
-              <span>Verified Wallet: {targetWalletAddress.slice(0,6)}...{targetWalletAddress.slice(-4)}</span>
-              {walletMismatch && <span className="ml-auto">Mismatch! Connect correct wallet.</span>}
-            </div>
-          )}
-        </div>
+              {(execState === "confirming" || execState === "building_tx" || execState === "approving") && (
+                <motion.div key="building" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 text-sm text-primary font-medium pt-4 border-t border-border">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {execState === "approving" ? "Awaiting approval signature…" : execState === "confirming" ? "Preparing transaction…" : "Building transaction data…"}
+                </motion.div>
+              )}
 
-        {/* Slippage warning */}
-        {!slippageOk && (
-          <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2" style={{ background: "oklch(0.6 0.15 85 / 0.1)", border: "1px solid oklch(0.6 0.15 85 / 0.2)", color: "oklch(0.75 0.15 85)" }}>
-            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-            High slippage detected. Review carefully before confirming.
-          </div>
-        )}
-
-        {isExpired && (
-          <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2" style={{ background: "oklch(0.55 0.22 27 / 0.1)", border: "1px solid oklch(0.55 0.22 27 / 0.2)", color: "oklch(0.7 0.2 27)" }}>
-            <XCircle className="w-3.5 h-3.5 flex-shrink-0" />
-            Quote expired, request a new quote.
-          </div>
-        )}
-
-      {/* ── Execution Section ── */}
-        <AnimatePresence mode="wait">
-          {showExecute && approvalId && execState === "idle" && (
-            <motion.div key="confirm-button" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="space-y-3 pt-3 border-t border-border/50">
-              {walletAddress ? (
-                <>
-                  <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2.5" style={{ background: "oklch(0.62 0.19 260 / 0.08)", border: "1px solid oklch(0.62 0.19 260 / 0.15)" }}>
-                    <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 text-blue-500 mt-0.5" />
+              {execState === "awaiting_signature" && (
+                <motion.div key="signing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-3 pt-4 border-t border-border">
+                  {/* Prominent signature prompt */}
+                  <div className="flex items-center gap-3 px-4 py-4 rounded-xl border bg-warning/10 border-warning/30 animate-pulse">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-warning/20">
+                      <Loader2 className="w-5 h-5 animate-spin text-warning" />
+                    </div>
                     <div>
-                      <p className="font-semibold mb-0.5" style={{ color: "oklch(0.7 0.15 260)" }}>User-Signed Execution (Trade Hard Cap Applies)</p>
-                      <p style={{ color: "oklch(0.6 0.1 260)" }}>Your wallet will ask you to review and sign. PhylaX never signs for you.</p>
+                      <p className="text-sm font-bold text-warning">
+                        Check your wallet
+                      </p>
+                      <p className="text-xs text-warning/80">
+                        Signature required to proceed
+                      </p>
                     </div>
                   </div>
-                  
-                  {liveMode ? (
-                    <label className="flex items-start gap-2 text-[11px] text-muted-foreground cursor-pointer bg-muted/20 p-2 rounded-lg border border-border/50 hover:bg-muted/40 transition-colors">
-                      <input 
-                        type="checkbox" 
-                        className="mt-0.5 rounded border-gray-300 text-electric focus:ring-electric"
-                        checked={riskAcknowledged}
-                        onChange={(e) => setRiskAcknowledged(e.target.checked)}
-                      />
-                      <span>
-                        I acknowledge the risks of on-chain trading and accept that PhylaX is not responsible for any losses.
-                      </span>
-                    </label>
-                  ) : null}
-
-                  <div className="flex flex-col gap-2">
-                    <button
-                      id="confirm-execute-btn"
-                      onClick={handleExecute}
-                      disabled={(liveMode && !riskAcknowledged) || isExpired || isHighRisk || !!walletMismatch || execState !== "idle"}
-                      className={`w-full py-3 px-4 rounded-xl text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
-                        (!liveMode || riskAcknowledged) && !isExpired && !isHighRisk && !walletMismatch && execState === "idle"
-                          ? "bg-gradient-brand text-white hover:shadow-glow hover:scale-[1.01]" 
-                          : "bg-muted text-muted-foreground cursor-not-allowed"
-                      }`}
-                    >
-                      <ShieldCheck className="w-4 h-4" />
-                      {currentNeedsApproval ? "Approve USDC spending" : "Sign swap in wallet"}
-                    </button>
-                    
-                    {walletMismatch && (
-                      <button
-                        onClick={onConnectWallet}
-                        className="w-full py-2 px-4 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-2"
-                        style={{ border: "1px solid oklch(0.55 0.22 27 / 0.3)", color: "oklch(0.7 0.2 27)" }}
-                      >
-                        Switch to {targetWalletAddress?.slice(0,6)}...
-                      </button>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2.5" style={{ color: "oklch(0.75 0.18 85)", background: "oklch(0.6 0.18 85 / 0.08)", border: "1px solid oklch(0.6 0.18 85 / 0.15)" }}>
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                    <p>Wallet connection required to sign and submit this transaction.</p>
-                  </div>
                   <button
-                    onClick={onConnectWallet}
-                    className="w-full py-3 px-4 rounded-xl border border-electric/30 text-electric text-sm font-bold hover:bg-electric/5 transition-all duration-200 flex items-center justify-center gap-2"
-                  >
-                    Connect Wallet to Sign
-                  </button>
-                </>
-              )}
-            </motion.div>
-          )}
-
-          {!showExecute && execState === "idle" && (
-            <motion.div key="exec-disabled" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pt-3 border-t border-border/50">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 border border-border rounded-lg px-3 py-2.5">
-                <Lock className="w-3.5 h-3.5 flex-shrink-0" />
-                Live execution disabled on {chainConfig?.name || "this chain"}
-              </div>
-            </motion.div>
-          )}
-
-          {(execState === "confirming" || execState === "building_tx" || execState === "approving") && (
-            <motion.div key="building" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 text-sm text-electric font-medium pt-3 border-t border-border/50">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              {execState === "approving" ? "Awaiting approval signature…" : execState === "confirming" ? "Preparing transaction…" : "Building transaction data…"}
-            </motion.div>
-          )}
-
-          {execState === "awaiting_signature" && (
-            <motion.div key="signing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-3 pt-3 border-t border-border/50">
-              {/* Prominent signature prompt */}
-              <div
-                className="flex items-center gap-3 px-4 py-3.5 rounded-xl border"
-                style={{
-                  background: "oklch(0.98 0.02 85 / 0.5)",
-                  borderColor: "oklch(0.88 0.08 85)",
-                  animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-                }}
-              >
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "oklch(0.65 0.18 85 / 0.15)" }}>
-                  <Loader2 className="w-5 h-5 animate-spin" style={{ color: "oklch(0.55 0.18 85)" }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold" style={{ color: "oklch(0.45 0.18 85)" }}>
-                    Check your wallet
-                  </p>
-                  <p className="text-[11px]" style={{ color: "oklch(0.55 0.12 85)" }}>
-                    Signature required to proceed
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setExecState("idle")}
-                className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
-              >
-                Cancel and return
-              </button>
-            </motion.div>
-          )}
-
-          {execState === "submitted" && (
-            <motion.div key="submitted" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3 pt-3 border-t border-border/50">
-              <div className="flex items-center gap-2 text-sm text-blue-600 font-medium">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Transaction submitted…
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {explorerUrl && (
-                  <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="flex-1 py-2 px-3 bg-muted hover:bg-muted/60 rounded-lg text-[11px] font-bold text-foreground flex items-center justify-center gap-2 transition-colors">
-                    View on Explorer <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-                <button 
-                  onClick={() => setExecState("idle")}
-                  className="flex-1 py-2 px-3 border border-border rounded-lg text-[11px] font-bold text-muted-foreground hover:bg-muted/20 flex items-center justify-center transition-colors"
-                >
-                  Check status
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {(execState === "failed" || execState === "rejected" || execState === "wrong_chain" || execState === "expired") && (
-            <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3 pt-3 border-t border-border/50">
-              <div className="flex items-center gap-2 text-sm font-medium" style={{ color: "oklch(0.7 0.2 27)" }}>
-                <XCircle className="w-4 h-4" />
-                {execState === "rejected" ? "Rejected by wallet" : execState === "wrong_chain" ? "Switch to X Layer" : execState === "expired" ? "Quote expired" : "Execution failed"}
-              </div>
-              
-              <div className="flex flex-col gap-2">
-                <button 
-                  onClick={() => {
-                    setExecState("idle");
-                    setIsExpired(false);
-                    // Re-triggering a re-quote is planned for the next UI iteration
-                  }}
-                  className="w-full py-2.5 px-4 bg-electric text-white rounded-xl text-xs font-bold hover:shadow-glow transition-all flex items-center justify-center gap-2"
-                >
-                  Refresh quote
-                </button>
-                
-                <div className="flex gap-2">
-                  <button 
-                    type="button"
                     onClick={() => setExecState("idle")}
-                    className="flex-1 py-2 px-3 border border-border rounded-lg text-[11px] font-bold text-muted-foreground hover:bg-muted/20 flex items-center justify-center"
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
                   >
-                    Scan another token
+                    Cancel and return
                   </button>
-                  <button 
-                    onClick={() => setExecState("idle")}
-                    className="flex-1 py-2 px-3 border border-border rounded-lg text-[11px] font-bold text-muted-foreground hover:bg-muted/20 flex items-center justify-center"
-                  >
-                    Change amount
-                  </button>
-                </div>
-              </div>
-
-              {execError && (
-                <div className="mt-2">
-                  <button onClick={() => setShowErrorDetail((v) => !v)} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
-                    {showErrorDetail ? "▾ Hide error detail" : "▸ Show error detail"}
-                  </button>
-                  {showErrorDetail && <p className="text-xs mt-1 font-mono break-all p-2 rounded" style={{ color: "oklch(0.7 0.2 27)", background: "oklch(0.55 0.22 27 / 0.06)", border: "1px solid oklch(0.55 0.22 27 / 0.12)" }}>{execError}</p>}
-                </div>
+                </motion.div>
               )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-      </>
+
+              {execState === "submitted" && (
+                <motion.div key="submitted" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4 pt-4 border-t border-border">
+                  <div className="flex items-center gap-2 text-sm text-primary font-medium">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Transaction submitted…
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {explorerUrl && (
+                      <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 flex-1">
+                        View on Explorer <ExternalLink className="w-3 h-3 ml-2" />
+                      </a>
+                    )}
+                    <Button 
+                      variant="secondary"
+                      onClick={() => setExecState("idle")}
+                      className="flex-1"
+                    >
+                      Check status
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+
+              {(execState === "failed" || execState === "rejected" || execState === "wrong_chain" || execState === "expired") && (
+                <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4 pt-4 border-t border-border">
+                  <div className="flex items-center gap-2 text-sm font-medium text-destructive">
+                    <XCircle className="w-4 h-4" />
+                    {execState === "rejected" ? "Rejected by wallet" : execState === "wrong_chain" ? "Switch to X Layer" : execState === "expired" ? "Quote expired" : "Execution failed"}
+                  </div>
+                  
+                  <div className="flex flex-col gap-2">
+                    <Button 
+                      onClick={() => {
+                        setExecState("idle");
+                        setIsExpired(false);
+                      }}
+                      className="w-full"
+                    >
+                      Refresh quote
+                    </Button>
+                    
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline"
+                        onClick={() => setExecState("idle")}
+                        className="flex-1"
+                      >
+                        Scan another token
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={() => setExecState("idle")}
+                        className="flex-1"
+                      >
+                        New trade
+                      </Button>
+                    </div>
+                  </div>
+
+                  {execError && (
+                    <div className="mt-2">
+                      <button onClick={() => setShowErrorDetail((v) => !v)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                        {showErrorDetail ? "▾ Hide error detail" : "▸ Show error detail"}
+                      </button>
+                      {showErrorDetail && <p className="text-xs mt-1 font-mono break-all p-3 rounded bg-destructive/10 border border-destructive/20 text-destructive">{execError}</p>}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </CardContent>
+        </>
       )}
-    </motion.div>
+    </Card>
   );
 }

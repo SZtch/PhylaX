@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
-import { PanelLeft, LogOut, User, AlertTriangle } from "lucide-react";
+import { PanelLeft, LogOut, User, AlertTriangle, Bot, BarChart3, History, Settings as SettingsIcon, Info, Moon, Sun } from "lucide-react";
 import { LandingNavbar } from "../components/landing/LandingNavbar";
 import { LandingHero } from "../components/landing/LandingHero";
 import { SignalDivider } from "../components/landing/SignalDivider";
@@ -14,9 +14,15 @@ import { LandingCTA } from "../components/landing/LandingCTA";
 import { LandingFooter } from "../components/landing/LandingFooter";
 import { LoadingIntro } from "../components/landing/LoadingIntro";
 import { ChatPanel } from "../components/ChatPanel";
-import { AppSidebar, type ChatSession, type SidebarView } from "../components/AppSidebar";
+import { AppSidebar, type ChatSession, type SidebarView, type AgentTab } from "../components/AppSidebar";
 import { PortfolioPanel } from "../components/PortfolioPanel";
 import { SettingsPanel } from "../components/SettingsPanel";
+import { ActivityPanel } from "../components/ActivityPanel";
+import { AboutPanel } from "../components/AboutPanel";
+import { AnalysisPanel } from "../components/AnalysisPanel";
+import { SignalsPanel } from "../components/SignalsPanel";
+import { ExecutionPanel } from "../components/ExecutionPanel";
+import { AgentWalletPanel } from "../components/AgentWalletPanel";
 import { ChainSelector } from "../components/ChainSelector";
 import { DEFAULT_CHAIN, type ChainConfig } from "../lib/chains";
 import { usePrivyAuth } from "../components/PrivyProviderWrapper";
@@ -84,6 +90,7 @@ export default function Home() {
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<SidebarView>("agent");
+  const [agentTab, setAgentTab] = useState<AgentTab>("chat");
   const consoleRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -408,6 +415,14 @@ export default function Home() {
     }
   }, [privy.ready, privy.authenticated]);
 
+  const handleChangeAgentTab = useCallback((tab: AgentTab) => {
+    setAgentTab(tab);
+    if (activeView !== "agent") {
+      setActiveView("agent");
+      setViewKey((k: number) => k + 1);
+    }
+  }, [activeView]);
+
   // ─── Landing ──────────────────────────────────────────────────────────
 
   const shouldShowAppShell = showConsole || authFlowStarted || privy.authenticated;
@@ -463,10 +478,13 @@ export default function Home() {
 
   const displayName = privy.userEmail ?? (privy.walletAddress ? `${privy.walletAddress.slice(0, 6)}…${privy.walletAddress.slice(-4)}` : "User");
 
+
+
   const sidebarProps = {
-    sessions, activeSessionId, activeView,
+    sessions, activeSessionId, activeView, agentTab,
     onNewChat: handleNewChat, onSelectSession: handleSelectSession,
     onDeleteSession: handleDeleteSession, onChangeView: handleChangeView,
+    onChangeAgentTab: handleChangeAgentTab,
     isLightMode, onToggleTheme: handleToggleTheme,
   };
 
@@ -609,7 +627,7 @@ export default function Home() {
         />
         {/* Mobile sidebar drawer */}
         <div
-          className={`fixed bottom-0 left-0 z-40 w-[280px] lg:hidden transition-transform duration-300 ease-out ${mobileSidebar ? "translate-x-0" : "-translate-x-full"}`}
+          className={`fixed bottom-0 left-0 z-40 w-[280px] lg:hidden flex flex-col transition-transform duration-300 ease-out ${mobileSidebar ? "translate-x-0" : "-translate-x-full"}`}
           style={{
             top: "3.5rem",
             background: isLightMode
@@ -625,7 +643,107 @@ export default function Home() {
               : "none",
           }}
         >
-          <AppSidebar {...sidebarProps} />
+          {/* Mobile Drawer Content */}
+          <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
+            
+            {/* Account Summary */}
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] mb-3" style={{ color: isLightMode ? "oklch(0.55 0.015 260)" : "oklch(1 0 0 / 0.35)" }}>
+                Account
+              </p>
+              {privy.authenticated ? (
+                <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: isLightMode ? "oklch(0.96 0.005 260)" : "oklch(1 0 0 / 0.04)", border: isLightMode ? "1px solid oklch(0.88 0.01 260)" : "1px solid oklch(1 0 0 / 0.06)" }}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-brand flex items-center justify-center shrink-0 shadow-md">
+                      <User className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {privy.userEmail && <p className="text-[13px] font-semibold truncate" style={{ color: isLightMode ? "oklch(0.15 0.04 265)" : "var(--app-text-primary)" }}>{privy.userEmail}</p>}
+                      <p className="text-[11px] mt-0.5" style={{ color: isLightMode ? "oklch(0.55 0.015 260)" : "var(--app-text-tertiary)" }}>Connected via Privy</p>
+                    </div>
+                  </div>
+                  {privy.hasWallet && privy.walletAddress && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: isLightMode ? "oklch(0.99 0.003 260)" : "oklch(1 0 0 / 0.04)" }}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      <CopyAddress address={privy.walletAddress} />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button type="button" onClick={handleSignIn} className="w-full btn-capsule-white justify-center">
+                  Sign in
+                </button>
+              )}
+            </div>
+
+            {/* Utilities */}
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] mb-3" style={{ color: isLightMode ? "oklch(0.55 0.015 260)" : "oklch(1 0 0 / 0.35)" }}>
+                Utilities
+              </p>
+              <div className="space-y-1">
+                <button
+                  onClick={() => handleChangeView("about")}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[13px] font-medium transition-all duration-200 text-left"
+                  style={{ color: isLightMode ? "oklch(0.35 0.02 260)" : "oklch(1 0 0 / 0.6)" }}
+                >
+                  <Info style={{ width: 16, height: 16 }} />
+                  About PhylaX
+                </button>
+                <button
+                  onClick={() => window.open("https://docs.phylax.com", "_blank")}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[13px] font-medium transition-all duration-200 text-left"
+                  style={{ color: isLightMode ? "oklch(0.35 0.02 260)" : "oklch(1 0 0 / 0.6)" }}
+                >
+                  <AlertTriangle style={{ width: 16, height: 16 }} />
+                  Help / Docs
+                </button>
+                <button
+                  onClick={handleToggleTheme}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-[13px] font-medium transition-all duration-200 text-left"
+                  style={{ color: isLightMode ? "oklch(0.35 0.02 260)" : "oklch(1 0 0 / 0.6)" }}
+                >
+                  <div className="flex items-center gap-3">
+                    {isLightMode ? <Moon style={{ width: 16, height: 16 }} /> : <Sun style={{ width: 16, height: 16 }} />}
+                    Theme
+                  </div>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: isLightMode ? "oklch(0.5 0.02 260)" : "oklch(1 0 0 / 0.4)" }}>
+                    {isLightMode ? "Light" : "Dark"}
+                  </span>
+                </button>
+              </div>
+            </div>
+            
+            {/* Network Status */}
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] mb-3" style={{ color: isLightMode ? "oklch(0.55 0.015 260)" : "oklch(1 0 0 / 0.35)" }}>
+                Network
+              </p>
+              <div className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ background: isLightMode ? "oklch(0.96 0.005 260)" : "oklch(1 0 0 / 0.03)" }}>
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                </span>
+                <span className="text-[12px] font-semibold tracking-wide" style={{ color: isLightMode ? "oklch(0.35 0.02 260)" : "oklch(1 0 0 / 0.6)" }}>
+                  {selectedChain.name} Live
+                </span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            {privy.authenticated && (
+              <div className="pt-4">
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[13px] font-medium transition-all duration-200 text-left"
+                  style={{ color: "var(--app-danger)", background: "oklch(0.65 0.2 25 / 0.05)" }}
+                >
+                  <LogOut style={{ width: 16, height: 16 }} />
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Desktop floating sidebar */}
@@ -637,7 +755,47 @@ export default function Home() {
 
         {/* Main content with grid texture */}
         <main className="flex-1 min-w-0 flex flex-col app-grid-bg" style={{ background: "var(--app-main)" }}>
+          {/* Mobile agent tab strip */}
           {activeView === "agent" && (
+            <div
+              className="lg:hidden shrink-0 py-2 agent-tab-strip"
+              style={{
+                borderBottom: isLightMode ? "1px solid oklch(0 0 0 / 0.06)" : "1px solid oklch(1 0 0 / 0.06)",
+              }}
+            >
+              {([
+                { icon: "💬", label: "Chat", tab: "chat" as AgentTab },
+                { icon: "🔍", label: "Analysis", tab: "analysis" as AgentTab },
+                { icon: "📡", label: "Signals", tab: "signals" as AgentTab },
+                { icon: "🛡️", label: "Execution", tab: "execution" as AgentTab },
+                { icon: "💼", label: "Wallet", tab: "wallet" as AgentTab },
+              ]).map(({ icon, label, tab }) => {
+                const isActive = agentTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => handleChangeAgentTab(tab)}
+                    className="agent-tab-chip"
+                    style={{
+                      background: isActive
+                        ? isLightMode ? "oklch(0.62 0.19 260 / 0.1)" : "oklch(0.62 0.19 260 / 0.12)"
+                        : "transparent",
+                      color: isActive
+                        ? isLightMode ? "oklch(0.45 0.19 260)" : "oklch(0.78 0.17 260)"
+                        : isLightMode ? "oklch(0.45 0.02 260)" : "oklch(1 0 0 / 0.45)",
+                      borderColor: isActive
+                        ? isLightMode ? "oklch(0.62 0.19 260 / 0.2)" : "oklch(0.62 0.19 260 / 0.2)"
+                        : "transparent",
+                    }}
+                  >
+                    <span className="text-xs">{icon}</span>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {activeView === "agent" && agentTab === "chat" && (
             <div key={`agent-${activeSessionId}`} className="flex flex-col flex-1 min-h-0 view-enter">
               <ChatPanel
                 key={activeSessionId}
@@ -655,6 +813,26 @@ export default function Home() {
               />
             </div>
           )}
+          {activeView === "agent" && agentTab === "analysis" && (
+            <div key={`analysis-${viewKey}`} className="flex flex-col flex-1 min-h-0 view-enter">
+              <AnalysisPanel />
+            </div>
+          )}
+          {activeView === "agent" && agentTab === "signals" && (
+            <div key={`signals-${viewKey}`} className="flex flex-col flex-1 min-h-0 view-enter">
+              <SignalsPanel />
+            </div>
+          )}
+          {activeView === "agent" && agentTab === "execution" && (
+            <div key={`execution-${viewKey}`} className="flex flex-col flex-1 min-h-0 view-enter">
+              <ExecutionPanel />
+            </div>
+          )}
+          {activeView === "agent" && agentTab === "wallet" && (
+            <div key={`wallet-${viewKey}`} className="flex flex-col flex-1 min-h-0 view-enter">
+              <AgentWalletPanel />
+            </div>
+          )}
           {activeView === "portfolio" && (
             <div key={`portfolio-${viewKey}`} className="flex flex-col flex-1 min-h-0 view-enter">
               <PortfolioPanel
@@ -666,6 +844,14 @@ export default function Home() {
                 onConnectWallet={handleConnectWallet}
                 onSignIn={handleSignIn}
                 getAccessToken={privy.getAccessToken}
+              />
+            </div>
+          )}
+          {activeView === "activity" && (
+            <div key={`activity-${viewKey}`} className="flex flex-col flex-1 min-h-0 view-enter">
+              <ActivityPanel
+                isAuthenticated={privy.authenticated}
+                onSignIn={handleSignIn}
               />
             </div>
           )}
@@ -684,7 +870,47 @@ export default function Home() {
               />
             </div>
           )}
+          {activeView === "about" && (
+            <div key={`about-${viewKey}`} className="flex flex-col flex-1 min-h-0 view-enter">
+              <AboutPanel />
+            </div>
+          )}
         </main>
+
+        {/* ═══ MOBILE BOTTOM NAV ═══ */}
+        <nav
+          className={`lg:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around px-2 py-1.5 mobile-bottom-nav transition-all duration-300 ${mobileSidebar ? "opacity-40 pointer-events-none scale-[0.98] translate-y-2" : ""}`}
+          style={{
+            background: isLightMode ? "oklch(0.99 0.003 260 / 0.95)" : "oklch(0.08 0.025 265 / 0.95)",
+            borderTop: isLightMode ? "1px solid oklch(0 0 0 / 0.06)" : "1px solid oklch(1 0 0 / 0.06)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+          }}
+        >
+          {[
+            { icon: Bot, label: "Agent", view: "agent" as SidebarView },
+            { icon: BarChart3, label: "Portfolio", view: "portfolio" as SidebarView },
+            { icon: History, label: "Activity", view: "activity" as SidebarView },
+            { icon: SettingsIcon, label: "Settings", view: "settings" as SidebarView },
+          ].map(({ icon: Icon, label, view }) => {
+            const active = activeView === view;
+            return (
+              <button
+                key={view}
+                onClick={() => handleChangeView(view)}
+                className="flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl transition-all duration-150"
+                style={{
+                  color: active
+                    ? "oklch(0.7 0.19 260)"
+                    : isLightMode ? "oklch(0.5 0.02 260)" : "oklch(1 0 0 / 0.35)",
+                }}
+              >
+                <Icon style={{ width: 18, height: 18 }} />
+                <span className="text-[9px] font-semibold">{label}</span>
+              </button>
+            );
+          })}
+        </nav>
       </div>
     </div>
   );

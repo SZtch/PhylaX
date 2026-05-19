@@ -410,7 +410,7 @@ export function ChatPanel({
             <div className="max-w-3xl lg:max-w-4xl mx-auto">
               <form onSubmit={handleSubmit}>
                 <div className="chat-input-capsule flex items-center gap-2 sm:gap-3">
-                  <button type="button" className="shrink-0 p-1.5 rounded-full transition-colors" style={{ color: "var(--app-text-tertiary)" }}>
+                  <button type="button" className="shrink-0 p-1.5 rounded-full transition-colors text-muted-foreground">
                     <Paperclip className="w-4 h-4" />
                   </button>
                   <textarea
@@ -421,8 +421,7 @@ export function ChatPanel({
                     disabled={isLoading}
                     placeholder="Ask PhylaX anything…"
                     rows={1}
-                    className="flex-1 bg-transparent text-sm sm:text-[15px] placeholder:opacity-25 resize-none outline-none min-h-[24px] max-h-[100px]"
-                    style={{ color: "var(--app-text-primary)" }}
+                    className="flex-1 bg-transparent text-sm sm:text-[15px] placeholder:opacity-25 resize-none outline-none min-h-[24px] max-h-[100px] text-foreground"
                   />
                   <button
                     type="submit"
@@ -442,7 +441,7 @@ export function ChatPanel({
                 </div>
               </form>
 
-              <p className="text-[10px] text-center mt-2" style={{ color: "var(--app-text-tertiary)", opacity: 0.5 }}>
+              <p className="text-[10px] text-center mt-2 text-muted-foreground/50">
                 Non-custodial · User-signed execution · {selectedChain.name}
               </p>
             </div>
@@ -475,10 +474,10 @@ export function ChatPanel({
                   </div>
                 </div>
 
-                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight mb-3" style={{ color: "var(--app-text-primary)" }}>
-                  Discover and Trade with PhylaX
+                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight mb-3 text-foreground">
+                  Trade secure on X Layer
                 </h2>
-                <p className="text-sm sm:text-base max-w-md mx-auto leading-relaxed" style={{ color: "var(--app-text-secondary)" }}>
+                <p className="text-sm sm:text-base max-w-md mx-auto leading-relaxed text-muted-foreground">
                   Your DeFi guard. Every trade scanned, every quote guarded.
                 </p>
               </div>
@@ -500,7 +499,7 @@ export function ChatPanel({
               ) : (
                 <form onSubmit={handleSubmit} className="mb-8">
                   <div className="chat-input-capsule flex items-center gap-3">
-                    <button type="button" className="shrink-0 p-1.5 rounded-full transition-colors" style={{ color: "var(--app-text-tertiary)" }}>
+                    <button type="button" className="shrink-0 p-1.5 rounded-full transition-colors text-muted-foreground">
                       <Paperclip className="w-4 h-4" />
                     </button>
                     <textarea
@@ -511,8 +510,7 @@ export function ChatPanel({
                       disabled={isLoading}
                       placeholder="Ask PhylaX anything…"
                       rows={1}
-                      className="flex-1 bg-transparent text-[15px] placeholder:opacity-25 resize-none outline-none disabled:cursor-not-allowed min-h-[24px] max-h-[100px]"
-                      style={{ color: "var(--app-text-primary)" }}
+                      className="flex-1 bg-transparent text-[15px] placeholder:opacity-25 resize-none outline-none disabled:cursor-not-allowed min-h-[24px] max-h-[100px] text-foreground"
                     />
                     <button
                       type="submit"
@@ -551,7 +549,7 @@ export function ChatPanel({
               </div>
             </EmptyStateWrapper>
 
-            <p className="text-[10px] text-center mt-4 tracking-wide" style={{ color: "var(--app-text-tertiary)", opacity: 0.35 }}>
+            <p className="text-[10px] text-center mt-4 tracking-wide text-muted-foreground/30">
               Powered by OKX Onchain OS · Non-custodial
             </p>
           </div>

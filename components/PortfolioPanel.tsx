@@ -199,59 +199,46 @@ export function PortfolioPanel({
         {/* Header */}
         <div className="flex items-center justify-between mb-6 sm:mb-8">
           <div>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-display font-bold" style={{ color: "var(--app-text-primary)" }}>Portfolio</h1>
-            <p className="text-xs sm:text-sm mt-1" style={{ color: "var(--app-text-secondary)" }}>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-display font-bold text-foreground">Portfolio</h1>
+            <p className="text-[13px] sm:text-sm mt-1 text-muted-foreground">
               {chainName} · {executionMode}
               {lastFetched && (
-                <span style={{ color: "var(--app-text-tertiary)" }}> · Updated {lastFetched.toLocaleTimeString()}</span>
+                <span className="text-muted-foreground/70"> · Updated {lastFetched.toLocaleTimeString()}</span>
               )}
             </p>
           </div>
           <button
             onClick={fetchBalances}
             disabled={loading}
-            className="p-2.5 sm:p-3 rounded-xl transition-all duration-200"
-            style={{ border: "1px solid var(--app-card-border)", background: "var(--app-card-glass)" }}
-            onMouseEnter={e => { e.currentTarget.style.background = "var(--app-hover)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "var(--app-card-glass)"; }}
+            className="p-2.5 sm:p-3 rounded-xl transition-all duration-200 border border-border bg-card hover:bg-muted"
             title="Refresh balances"
           >
-            <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 ${loading ? "animate-spin" : ""}`} style={{ color: "var(--app-text-secondary)" }} />
+            <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
 
         {/* Total Value Card */}
-        <div
-          className="rounded-2xl p-5 sm:p-6 lg:p-8 mb-6 sm:mb-8 relative overflow-hidden"
-          style={{
-            background: "linear-gradient(135deg, oklch(0.62 0.19 260 / 0.12), oklch(0.7 0.13 280 / 0.06))",
-            border: "1px solid oklch(0.62 0.19 260 / 0.15)",
-          }}
-        >
-          {/* Decorative glow */}
-          <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-20" style={{ background: "oklch(0.62 0.19 260)" }} />
-          
-          <p className="text-[10px] sm:text-[11px] lg:text-xs font-semibold uppercase tracking-[0.15em] mb-2" style={{ color: "oklch(0.7 0.19 260)" }}>
+        <div className="rounded-2xl p-5 sm:p-6 lg:p-8 mb-6 sm:mb-8 relative overflow-hidden bg-muted/30 border border-border">
+          <p className="text-[10px] sm:text-[11px] lg:text-xs font-semibold uppercase tracking-[0.15em] mb-2 text-primary">
             Total Value
           </p>
-          <p className="text-3xl sm:text-4xl lg:text-5xl font-display font-extrabold tracking-tight relative z-10" style={{ color: "var(--app-text-primary)" }}>
+          <p className="text-3xl sm:text-4xl lg:text-5xl font-display font-extrabold tracking-tight relative z-10 tabular-nums text-foreground">
             {loading && tokens.length === 0 ? (
               <span className="inline-flex items-center gap-3">
-                <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 animate-spin" style={{ color: "oklch(0.7 0.19 260)" }} />
-                <span className="text-lg sm:text-xl" style={{ color: "var(--app-text-tertiary)" }}>Loading…</span>
+                <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 animate-spin text-primary" />
+                <span className="text-lg sm:text-xl text-muted-foreground">Loading…</span>
               </span>
             ) : formattedTotal}
           </p>
           <button
             type="button"
             onClick={handleCopyAddress}
-            className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-mono relative z-10 transition-all duration-200 hover:scale-[1.02] cursor-pointer group"
-            style={{ background: "var(--app-subtle-bg)", border: "1px solid var(--app-subtle-border)", color: "var(--app-text-tertiary)" }}
+            className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-mono relative z-10 transition-all duration-200 hover:scale-[1.02] cursor-pointer group bg-muted border border-border text-muted-foreground"
             title="Click to copy address"
           >
             {walletAddress?.slice(0, 6)}…{walletAddress?.slice(-4)}
             {copied ? (
-              <Check className="w-3 h-3" style={{ color: "var(--app-success)" }} />
+              <Check className="w-3 h-3 text-[var(--app-success)]" />
             ) : (
               <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity" />
             )}
@@ -259,54 +246,35 @@ export function PortfolioPanel({
         </div>
 
         {/* Portfolio Chart Section */}
-        <div
-          className="rounded-2xl mb-6 sm:mb-8 overflow-hidden"
-          style={{ background: "var(--app-card-glass)", border: "1px solid var(--app-card-border)" }}
-        >
-          <div className="px-4 sm:px-5 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--app-card-border)" }}>
+        <div className="rounded-2xl mb-6 sm:mb-8 overflow-hidden bg-card border border-border">
+          <div className="px-4 sm:px-5 py-3 flex items-center justify-between border-b border-border">
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" style={{ color: "oklch(0.7 0.19 260)" }} />
-              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.12em]" style={{ color: "var(--app-text-secondary)" }}>Performance</span>
+              <TrendingUp className="w-4 h-4 text-primary" />
+              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Performance</span>
             </div>
-            <div className="flex gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0.5 0.02 260 / 0.08)" }}>
+            <div className="flex gap-1 p-0.5 rounded-lg bg-muted">
               {["1D", "7D", "1M", "3M", "1Y"].map(r => (
                 <button
                   key={r}
                   onClick={() => setChartRange(r)}
-                  className="px-2.5 py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all duration-150"
-                  style={{
-                    background: chartRange === r ? "oklch(0.62 0.19 260 / 0.15)" : "transparent",
-                    color: chartRange === r ? "oklch(0.75 0.19 260)" : "var(--app-text-tertiary)",
-                    border: chartRange === r ? "1px solid oklch(0.62 0.19 260 / 0.2)" : "1px solid transparent",
-                  }}
+                  className={`px-2.5 py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all duration-150 ${
+                    chartRange === r ? "bg-primary/10 text-primary border border-primary/20" : "text-muted-foreground border border-transparent"
+                  }`}
                 >
                   {r}
                 </button>
               ))}
             </div>
           </div>
-          <div className="px-4 sm:px-5 py-6 sm:py-8 flex flex-col items-center justify-center" style={{ minHeight: 140 }}>
-            {/* SVG Sparkline placeholder */}
-            <svg viewBox="0 0 400 80" className="w-full max-w-md" style={{ opacity: 0.3 }}>
-              <defs>
-                <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="oklch(0.62 0.19 260)" stopOpacity="0.3" />
-                  <stop offset="100%" stopColor="oklch(0.62 0.19 260)" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path d="M0,60 Q50,55 100,45 T200,35 T300,25 T400,20" fill="none" stroke="oklch(0.62 0.19 260)" strokeWidth="2" strokeLinecap="round" />
-              <path d="M0,60 Q50,55 100,45 T200,35 T300,25 T400,20 V80 H0 Z" fill="url(#chartGrad)" />
-            </svg>
-            <p className="text-[11px] mt-3 font-medium" style={{ color: "var(--app-text-tertiary)" }}>Historical chart — Coming Soon</p>
+          <div className="px-4 sm:px-5 py-6 sm:py-8 flex flex-col items-center justify-center min-h-[140px] text-muted-foreground">
+            {/* Empty State */}
+            <p className="text-[11px] mt-3 font-medium">Chart data belum tersedia.</p>
           </div>
         </div>
 
         {/* Error message */}
         {error && (
-          <div
-            className="rounded-xl px-4 py-3 mb-4 flex items-center gap-3 text-sm"
-            style={{ background: "oklch(0.65 0.2 25 / 0.08)", border: "1px solid oklch(0.65 0.2 25 / 0.15)", color: "var(--app-danger)" }}
-          >
+          <div className="rounded-xl px-4 py-3 mb-4 flex items-center gap-3 text-sm bg-destructive/10 border border-destructive/20 text-destructive">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span className="flex-1">{error}</span>
             <button onClick={fetchBalances} className="text-xs font-semibold underline">Retry</button>
@@ -316,36 +284,28 @@ export function PortfolioPanel({
         {/* Token List Header */}
         {tokens.length > 0 && (
           <div className="flex items-center justify-between px-4 mb-2">
-            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.15em]" style={{ color: "var(--app-text-tertiary)" }}>
+            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
               Assets ({tokens.length})
             </span>
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setCurrencyOpen(!currencyOpen)}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.1em] transition-all duration-150"
-                style={{ color: "oklch(0.7 0.19 260)", background: "oklch(0.62 0.19 260 / 0.08)", border: "1px solid oklch(0.62 0.19 260 / 0.12)" }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.1em] transition-all duration-150 text-primary bg-primary/10 border border-primary/20"
               >
                 {currency}
                 <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${currencyOpen ? "rotate-180" : ""}`} />
               </button>
               {currencyOpen && (
-                <div
-                  className="absolute right-0 top-full mt-1 rounded-lg py-1 z-50 min-w-[80px] shadow-lg"
-                  style={{ background: "var(--card)", border: "1px solid var(--border)" }}
-                >
+                <div className="absolute right-0 top-full mt-1 rounded-lg py-1 z-50 min-w-[80px] shadow-lg bg-card border border-border">
                   {Object.keys(currencyRates).map(c => (
                     <button
                       key={c}
                       type="button"
                       onClick={() => { setCurrency(c); setCurrencyOpen(false); }}
-                      className="w-full text-left px-3 py-1.5 text-[11px] font-bold transition-colors"
-                      style={{
-                        color: c === currency ? "oklch(0.7 0.19 260)" : "var(--app-text-secondary)",
-                        background: c === currency ? "oklch(0.62 0.19 260 / 0.08)" : "transparent",
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = "var(--app-hover)"; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = c === currency ? "oklch(0.62 0.19 260 / 0.08)" : "transparent"; }}
+                      className={`w-full text-left px-3 py-1.5 text-[11px] font-bold transition-colors hover:bg-muted ${
+                        c === currency ? "text-primary bg-primary/10" : "text-muted-foreground"
+                      }`}
                     >
                       {currencyRates[c].symbol} {c}
                     </button>
@@ -367,7 +327,7 @@ export function PortfolioPanel({
                 <button
                   type="button"
                   onClick={() => setExpanded(isExpanded ? null : token.symbol)}
-                  className="w-full flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3.5 sm:py-4 rounded-xl transition-all duration-200 text-left app-card app-card-hover"
+                  className="w-full flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3.5 sm:py-4 rounded-xl transition-all duration-200 text-left bg-card border border-border hover:bg-muted"
                 >
                   {/* Token icon */}
                   <div className="shrink-0">
@@ -377,65 +337,60 @@ export function PortfolioPanel({
                   {/* Token info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm sm:text-base font-bold" style={{ color: "var(--app-text-primary)" }}>{token.symbol}</span>
-                      <span className="text-[10px] sm:text-xs hidden sm:inline" style={{ color: "var(--app-text-tertiary)" }}>{token.name}</span>
+                      <span className="text-sm sm:text-base font-bold text-foreground">{token.symbol}</span>
+                      <span className="text-[10px] sm:text-xs hidden sm:inline text-muted-foreground">{token.name}</span>
                     </div>
-                    <span className="text-xs sm:text-sm block mt-0.5 font-mono" style={{ color: "var(--app-text-secondary)" }}>
+                    <span className="text-xs sm:text-sm block mt-0.5 font-mono text-muted-foreground">
                       {token.balance}
                     </span>
                   </div>
 
                   {/* Value & change */}
                   <div className="text-right shrink-0">
-                    <p className="text-sm sm:text-base font-bold" style={{ color: "var(--app-text-primary)" }}>{fmtCur(parseFloat(token.usdValue))}</p>
+                    <p className="text-sm sm:text-base font-bold text-foreground">{fmtCur(parseFloat(token.usdValue))}</p>
                     <p className="text-[10px] sm:text-xs font-semibold" style={{ color: change.color }}>{change.text}</p>
                   </div>
 
                   <ChevronRight
-                    className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
-                    style={{ color: "var(--app-text-tertiary)" }}
+                    className={`w-4 h-4 shrink-0 transition-transform duration-200 text-muted-foreground ${isExpanded ? "rotate-90" : ""}`}
                   />
                 </button>
 
                 {/* Expanded detail */}
                 {isExpanded && (
-                  <div
-                    className="ml-14 sm:ml-16 mr-4 mb-2 px-4 sm:px-5 py-3 sm:py-4 rounded-xl view-enter"
-                    style={{ background: "var(--app-card-glass)", border: "1px solid var(--app-card-border)" }}
-                  >
+                  <div className="ml-14 sm:ml-16 mr-4 mb-2 px-4 sm:px-5 py-3 sm:py-4 rounded-xl view-enter bg-muted/30 border border-border">
                     <div className="space-y-2.5 text-xs sm:text-sm">
                       <div className="flex items-center justify-between">
-                        <span style={{ color: "var(--app-text-secondary)" }}>Chain</span>
-                        <span className="font-medium" style={{ color: "var(--app-text-primary)" }}>{chainName}</span>
+                        <span className="text-muted-foreground">Chain</span>
+                        <span className="font-medium text-foreground">{chainName}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span style={{ color: "var(--app-text-secondary)" }}>Holdings</span>
-                        <span className="font-mono font-medium" style={{ color: "var(--app-text-primary)" }}>{token.balance} {token.symbol}</span>
+                        <span className="text-muted-foreground">Holdings</span>
+                        <span className="font-mono font-medium text-foreground">{token.balance} {token.symbol}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span style={{ color: "var(--app-text-secondary)" }}>Unit Price</span>
-                        <span className="font-medium" style={{ color: "var(--app-text-primary)" }}>${token.price.toFixed(2)}</span>
+                        <span className="text-muted-foreground">Unit Price</span>
+                        <span className="font-medium text-foreground">${token.price.toFixed(2)}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span style={{ color: "var(--app-text-secondary)" }}>{currency} Value</span>
-                        <span className="font-bold" style={{ color: "var(--app-text-primary)" }}>{fmtCur(parseFloat(token.usdValue))}</span>
+                        <span className="text-muted-foreground">{currency} Value</span>
+                        <span className="font-bold text-foreground">{fmtCur(parseFloat(token.usdValue))}</span>
                       </div>
                       {token.contractAddress && token.contractAddress !== "native" && (
                         <div className="flex items-center justify-between">
-                          <span style={{ color: "var(--app-text-secondary)" }}>Contract</span>
-                          <span className="font-mono text-[11px]" style={{ color: "var(--app-text-tertiary)" }}>
+                          <span className="text-muted-foreground">Contract</span>
+                          <span className="font-mono text-[11px] text-muted-foreground">
                             {token.contractAddress.slice(0, 6)}…{token.contractAddress.slice(-4)}
                           </span>
                         </div>
                       )}
                     </div>
-                    <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--app-card-border)" }}>
+                    <div className="mt-3 pt-3 border-t border-border">
                       <a
                         href={`https://www.okx.com/web3/explorer/xlayer/address/${walletAddress}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium transition-opacity hover:opacity-80"
-                        style={{ color: "oklch(0.7 0.19 260)" }}
+                        className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium transition-opacity hover:opacity-80 text-primary"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         View on Explorer
@@ -452,28 +407,23 @@ export function PortfolioPanel({
         {loading && tokens.length === 0 && (
           <div className="space-y-2">
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-16 sm:h-20 rounded-xl animate-pulse" style={{ background: "var(--app-card-glass)" }} />
+              <div key={i} className="h-16 sm:h-20 rounded-xl animate-pulse bg-card" />
             ))}
           </div>
         )}
 
         {tokens.length === 0 && !loading && !error && (
           <div className="text-center py-12 sm:py-16">
-            <div className="w-14 h-14 rounded-2xl mx-auto mb-5 flex items-center justify-center" style={{ background: "oklch(0.62 0.19 260 / 0.08)", border: "1px solid oklch(0.62 0.19 260 / 0.12)" }}>
-              <Wallet className="w-6 h-6" style={{ color: "oklch(0.7 0.19 260)" }} />
+            <div className="w-14 h-14 rounded-2xl mx-auto mb-5 flex items-center justify-center bg-primary/10 border border-primary/20">
+              <Wallet className="w-6 h-6 text-primary" />
             </div>
-            <p className="text-base font-bold mb-1" style={{ color: "var(--app-text-primary)" }}>No tokens found</p>
-            <p className="text-sm mb-6" style={{ color: "var(--app-text-tertiary)" }}>Deposit tokens to {chainName} to see your portfolio</p>
+            <p className="text-base font-bold mb-1 text-foreground">Data belum tersedia.</p>
+            <p className="text-sm mb-6 text-muted-foreground">Deposit tokens to {chainName} to see your portfolio</p>
             <a
               href="https://www.okx.com/web3/bridge"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 hover:scale-[1.02]"
-              style={{
-                background: "linear-gradient(135deg, oklch(0.62 0.19 260), oklch(0.7 0.13 280))",
-                color: "#fff",
-                boxShadow: "0 4px 20px oklch(0.62 0.19 260 / 0.3)",
-              }}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 hover:scale-[1.02] bg-primary text-primary-foreground"
             >
               <Plus className="w-4 h-4" />
               Bridge tokens to X Layer
@@ -486,8 +436,8 @@ export function PortfolioPanel({
         <div className="mt-8 sm:mt-10">
           <div className="flex items-center justify-between px-4 mb-3">
             <div className="flex items-center gap-2">
-              <Clock className="w-3.5 h-3.5" style={{ color: "var(--app-text-tertiary)" }} />
-              <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.15em]" style={{ color: "var(--app-text-tertiary)" }}>
+              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
                 PhylaX Trades {persistedTxs.length > 0 ? `(${persistedTxs.length})` : ""}
               </span>
             </div>
@@ -497,24 +447,21 @@ export function PortfolioPanel({
               {persistedTxs.slice(0, 10).map((tx) => (
                 <div
                   key={tx.txHash ?? tx.id}
-                  className="flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-3.5 rounded-xl app-card"
+                  className="flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-3.5 rounded-xl bg-card border border-border"
                 >
-                  <div
-                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: "oklch(0.62 0.19 260 / 0.1)", border: "1px solid oklch(0.62 0.19 260 / 0.12)" }}
-                  >
-                    <ArrowRightLeft className="w-4 h-4" style={{ color: "oklch(0.7 0.19 260)" }} />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 bg-primary/10 border border-primary/20">
+                    <ArrowRightLeft className="w-4 h-4 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className="text-xs sm:text-sm font-bold" style={{ color: "var(--app-text-primary)" }}>
+                    <span className="text-xs sm:text-sm font-bold text-foreground">
                       {tx.fromSymbol} → {tx.toSymbol}
                     </span>
-                    <span className="text-[10px] sm:text-xs block mt-0.5" style={{ color: "var(--app-text-tertiary)" }}>
+                    <span className="text-[10px] sm:text-xs block mt-0.5 text-muted-foreground">
                       {tx.confirmedAt ? new Date(tx.confirmedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
                     </span>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-xs sm:text-sm font-bold" style={{ color: "var(--app-text-primary)" }}>
+                    <p className="text-xs sm:text-sm font-bold text-foreground">
                       ${(tx.amountUsd ?? 0).toFixed(2)}
                     </p>
                   </div>
@@ -523,23 +470,20 @@ export function PortfolioPanel({
                       href={tx.explorerUrl || `https://www.okx.com/web3/explorer/xlayer/tx/${tx.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="shrink-0 p-1 rounded-lg transition-opacity hover:opacity-70"
+                      className="shrink-0 p-1 rounded-lg transition-opacity hover:opacity-70 text-primary"
                       title="View on explorer"
                     >
-                      <ExternalLink className="w-3.5 h-3.5" style={{ color: "oklch(0.7 0.19 260)" }} />
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </a>
                   )}
                 </div>
               ))}
             </div>
           ) : (
-            <div
-              className="rounded-xl px-5 py-8 text-center"
-              style={{ background: "var(--app-card-glass)", border: "1px solid var(--app-card-border)" }}
-            >
-              <ArrowRightLeft className="w-5 h-5 mx-auto mb-2" style={{ color: "var(--app-text-tertiary)" }} />
-              <p className="text-sm font-medium" style={{ color: "var(--app-text-secondary)" }}>No trades yet</p>
-              <p className="text-xs mt-1" style={{ color: "var(--app-text-tertiary)" }}>Swaps executed via PhylaX Agent will appear here</p>
+            <div className="rounded-xl px-5 py-8 text-center bg-card border border-border">
+              <ArrowRightLeft className="w-5 h-5 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm font-medium text-muted-foreground">Data belum tersedia.</p>
+              <p className="text-xs mt-1 text-muted-foreground">Swaps executed via PhylaX Agent will appear here</p>
             </div>
           )}
         </div>

@@ -27,6 +27,9 @@ let mockRiskPolicyAllowed = true;
 let mockLiveExecution = true;
 const auditEvents: any[] = [];
 
+process.env.NODE_ENV = "test";
+(global as any).__mockCheckRateLimit = async () => true;
+
 // ─── Global hook wiring ───────────────────────────────────────────────────────
 
 (global as any).__mockVerifyWalletSession = async () => mockWalletSession;
@@ -259,6 +262,8 @@ async function runTests() {
     const req = createRequest({ approvalId: "app_recheck_001", riskAcknowledged: true });
     const res = await executeRoute(req);
     const data = await res.json();
+    
+    console.log("Test 6 status:", res.status, "data:", data);
 
     assert(res.status === 403, "Replay is blocked with 403");
     assert(data.error === "Approval ID has already been used.", "Replay error message returned");

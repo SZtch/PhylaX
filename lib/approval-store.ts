@@ -326,6 +326,9 @@ export async function consumeExecutionRecord(id: string): Promise<boolean> {
   }
 }
 export async function markApprovalTxConsumed(txHash: string): Promise<boolean> {
+  if (typeof global !== "undefined" && (global as any).__mockMarkApprovalTxConsumed) {
+    return (global as any).__mockMarkApprovalTxConsumed(txHash);
+  }
   const live = isLiveExecutionEnabled();
   const redis = getRedis();
 

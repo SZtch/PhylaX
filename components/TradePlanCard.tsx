@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { ChainBadge } from "./ChainBadge";
 import type { TokenSignal, SignalBadge } from "../lib/schemas";
+import { Card, CardHeader, CardTitle } from "./ui/card";
 
 type DisplayMode = "trade-plan" | "signals";
 
@@ -220,23 +221,16 @@ export function TradePlanCard({ tokens, chainName, displayMode = "trade-plan", r
     : tokens;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-card border border-border rounded-2xl overflow-hidden shadow-soft"
-    >
-      <div
-        className="px-4 py-3 border-b border-border flex items-center justify-between"
-        style={{ background: "oklch(0 0 0 / 0.06)" }}
-      >
+    <Card className="overflow-hidden">
+      <CardHeader className="bg-muted/30 px-4 py-3 flex flex-row items-center justify-between space-y-0 border-b">
         <div className="flex items-center gap-2">
-          <TitleIcon className="w-4 h-4 text-electric" />
-          <h4 className="text-xs font-bold uppercase tracking-widest text-foreground">
+          <TitleIcon className="w-4 h-4 text-primary" />
+          <CardTitle className="text-xs uppercase tracking-widest text-foreground">
             {title}
-          </h4>
+          </CardTitle>
         </div>
         <ChainBadge chainName={chainName} chainId={chainId} size="sm" />
-      </div>
+      </CardHeader>
 
       <div className="divide-y divide-border">
         {/* Show matched tokens first if requestedToken is set */}
@@ -250,12 +244,12 @@ export function TradePlanCard({ tokens, chainName, displayMode = "trade-plan", r
 
         {/* Separator between matched and other signals */}
         {requestedToken && matchedTokens.length > 0 && otherTokens.length > 0 && (
-          <div className="px-4 py-2 flex items-center gap-2" style={{ background: "oklch(0 0 0 / 0.03)" }}>
-            <div className="h-px flex-1" style={{ background: "var(--app-card-border)" }} />
+          <div className="px-4 py-2 flex items-center gap-2 bg-muted/10">
+            <div className="h-px flex-1 bg-border" />
             <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground shrink-0">
               Other active {chainName.toLowerCase().includes("layer") ? "X Layer" : chainName} signals
             </span>
-            <div className="h-px flex-1" style={{ background: "var(--app-card-border)" }} />
+            <div className="h-px flex-1 bg-border" />
           </div>
         )}
 
@@ -266,7 +260,7 @@ export function TradePlanCard({ tokens, chainName, displayMode = "trade-plan", r
 
         {/* If requested token was specified but not found */}
         {requestedToken && matchedTokens.length === 0 && (
-          <div className="px-4 py-3 text-xs text-muted-foreground" style={{ background: "oklch(0 0 0 / 0.02)" }}>
+          <div className="px-4 py-3 text-xs text-muted-foreground bg-muted/10">
             No {requestedToken.toUpperCase()}-specific signal found right now.
             {otherTokens.length > 0 && " Showing other active signals below."}
           </div>
@@ -275,12 +269,12 @@ export function TradePlanCard({ tokens, chainName, displayMode = "trade-plan", r
 
       {/* Signal-only disclaimer */}
       {isSignalMode && (
-        <div className="px-4 py-2 border-t border-border" style={{ background: "oklch(0 0 0 / 0.03)" }}>
-          <p className="text-[9px] text-muted-foreground">
+        <div className="px-4 py-2 border-t border-border bg-muted/10">
+          <p className="text-[10px] text-muted-foreground">
             Signals are for informational purposes only. Not financial advice. Run a token scan before trading.
           </p>
         </div>
       )}
-    </motion.div>
+    </Card>
   );
 }

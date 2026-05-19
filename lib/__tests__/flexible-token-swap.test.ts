@@ -4,6 +4,7 @@ import { parseThesis } from "../anthropic";
 import { checkBalance } from "../okx";
 
 async function runFlexibleTokenSwapTests() {
+  process.env.MAX_TRADE_USD_HARD_CAP = "100";
   console.log("\n🔄 Flexible Token Swap Tests\n");
   let passed = 0;
   let failed = 0;
@@ -15,7 +16,7 @@ async function runFlexibleTokenSwapTests() {
       return { hasSufficient: true, balance: (amount + 10).toString(), meta: { source: "mock", timestamp: new Date().toISOString() } };
     };
 
-    (global as any).__mockScanTokenHandler = async (address: string) => {
+    (global as any).__mockScanToken = async (address: string) => {
       if (address === "0xmedium") {
         return {
           address,
@@ -75,6 +76,21 @@ async function runFlexibleTokenSwapTests() {
       };
     };
 
+    (global as any).__mockGetSwapTxData = async (toAddress: string, amount: number, chain: string, walletAddress: string, fromToken: string, slippage: number) => {
+      return {
+        txData: { to: "0xrouter", data: "0xswapdata" }
+      };
+    };
+
+    process.env.NODE_ENV = "test";
+    (global as any).__mockCheckRateLimit = async () => true;
+
+    (global as any).__mockGetTokenDecimals = async (chain: string, tokenAddress: string) => 18;
+    
+    (global as any).__mockCheckAllowance = async (chain: string, wallet: string, token: string, amount: number, decimals: number) => ({ hasSufficient: true });
+    
+    (global as any).__mockGetApproveTxData = async (chain: string, token: string, amount: number, decimals: number) => ({ txData: { to: "0xspender", data: "0xapprove" } });
+
     const get_swap_quote = registry.get("get_swap_quote")!;
     const testContext = { conversationId: "test", walletAddress: "0xtestwallet" };
 
@@ -86,6 +102,7 @@ async function runFlexibleTokenSwapTests() {
       amount: 1,
       chain: "x-layer"
     }, testContext) as any;
+    console.log("Res:", res);
     assert(!res.error && !res.blocked, "USDC -> token quote should succeed");
     assert(res.fromToken === "0xusdc", "Quote should use the provided USDC from_address");
     passed++;
@@ -264,7 +281,12 @@ async function runFlexibleTokenSwapTests() {
     const executeRoute = require("../../app/api/execute/route");
     (global as any).__mockValidateAndConsumeApproval = async () => ({
       valid: true,
-      approval: { needsApproval: true, budgetUsd: 10, walletAddress: "0xtestwallet", chain: "x-layer" }
+      approval: { needsApproval: true, budgetUsd: 10, walletAddress: "0xtestwallet", chain: "x-layer", fromToken: "0xtoken", spender: "0x" + mockRouter, approveAmount: "1000", tokenAddress: "0xto" }
+    });
+    
+    (global as any).__mockPeekApproval = async () => ({
+      found: true,
+      approval: { needsApproval: true, budgetUsd: 10, walletAddress: "0xtestwallet", chain: "x-layer", fromToken: "0xtoken", spender: "0x" + mockRouter, approveAmount: "1000", tokenAddress: "0xto" }
     });
     
     const mockRequest = (body: any) => ({
@@ -276,6 +298,7 @@ async function runFlexibleTokenSwapTests() {
 
     let resExecute = await executeRoute.POST(mockRequest({ approvalId: "req-approve", riskAcknowledged: true }), { params: {} });
     let resJson = await resExecute.json();
+    console.log("execute response:", resExecute.status, resJson);
     assert(resExecute.status === 400 && resJson.error.includes("Approval transaction hash is missing"), "execute should reject missing approvalTxHash");
     passed++;
     console.log("  ✅ execute rejects missing approvalTxHash");
@@ -352,6 +375,7 @@ async function runFlexibleTokenSwapTests() {
     (global as any).__mockMarkApprovalTxConsumed = async () => false;
     resExecute = await executeRoute.POST(mockRequest({ approvalId: "req-approve", riskAcknowledged: true, approvalTxHash: "0xvalid" }), { params: {} });
     resJson = await resExecute.json();
+    console.log("Debug Test 24:", resExecute.status, resJson);
     assert(resExecute.status === 403 && resJson.error.includes("replay blocked"), "execute should reject replay");
     passed++;
     console.log("  ✅ execute rejects approval replay");

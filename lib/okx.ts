@@ -1016,6 +1016,9 @@ export async function getApproveTxData(
 }
 
 export async function getTokenDecimals(chain: string, tokenAddress: string): Promise<number> {
+  if (typeof global !== "undefined" && (global as any).__mockGetTokenDecimals) {
+    return (global as any).__mockGetTokenDecimals(chain, tokenAddress);
+  }
   const chainConfig = normalizeChain(chain);
   if (!tokenAddress || tokenAddress === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") return 18;
 

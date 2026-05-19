@@ -99,10 +99,10 @@ export function SettingsPanel({
 
   return (
     <div className="flex-1 overflow-y-auto scroll-contain">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-10">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-xl font-display font-bold mb-1" style={{ color: "var(--app-text-primary)" }}>Settings</h1>
+        <div className="section-header">
+          <h1 className="text-xl sm:text-2xl font-display font-bold" style={{ color: "var(--app-text-primary)" }}>Settings</h1>
           <p className="text-sm" style={{ color: "var(--app-text-secondary)" }}>Manage your account, wallet, and preferences.</p>
         </div>
 
@@ -192,6 +192,35 @@ export function SettingsPanel({
               <span className="text-sm" style={{ color: "var(--app-text-secondary)" }}>Security Model</span>
               <span className="text-sm font-medium" style={{ color: "var(--app-text-primary)" }}>Non-custodial, user-signed</span>
             </div>
+          </div>
+        </section>
+
+        {/* Billing & API Access — Preview */}
+        <section className="rounded-xl p-5 mb-4" style={sectionStyle}>
+          <h2 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: "var(--app-text-primary)" }}>
+            <span style={{ color: "oklch(0.78 0.15 85)" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect width="20" height="14" x="2" y="5" rx="2" />
+                <line x1="2" x2="22" y1="10" y2="10" />
+              </svg>
+            </span>
+            Billing & API Access
+            <span
+              className="status-badge"
+              style={{ background: "oklch(0.78 0.15 85 / 0.1)", color: "oklch(0.78 0.15 85)", borderColor: "oklch(0.78 0.15 85 / 0.15)" }}
+            >
+              Coming Soon
+            </span>
+          </h2>
+          <p className="text-[13px] mb-3 leading-relaxed" style={{ color: "var(--app-text-secondary)" }}>
+            Machine-to-machine payment protocols for premium API access and agent-to-agent commerce.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {["okx-agent-payments-protocol", "okx-x402-payment", "okx-a2a-payment"].map((skill) => (
+              <span key={skill} className="skill-tag">
+                {skill}
+              </span>
+            ))}
           </div>
         </section>
 
